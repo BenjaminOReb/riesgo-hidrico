@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+env/
+venv/
+*.env
+
+# Node / Vite
+node_modules/
+dist/
+.vite/
+
+# IDEs
+.vscode/
+.idea/
+
+# Archivos temporales
+*.swp
+*.tmp
+.DS_Store
+
+# datos generados
+backend/uploads/

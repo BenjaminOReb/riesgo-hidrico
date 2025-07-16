@@ -1,0 +1,12 @@
+flask
+flask-cors
+xarray
+netCDF4
+numpy
+scikit-fuzzy
+matplotlib
+psycopg2-binary
+geopandas
+rasterio
+affine
+cftime  
