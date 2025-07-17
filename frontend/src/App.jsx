@@ -48,7 +48,7 @@ function App() {
       {/* —–––––––––––––––––––––––––––––––––––––––––––––––– */}
       <header className="app-header">
         <img src={EscudoUbb} alt="Escudo UBB" className="logo-ubb" />
-        <h1>🌧️ Proyecto Riesgo Hídrico</h1>
+        <h1> Proyecto Riesgo Hídrico</h1>
         <img src={LogoFace} alt="Facultad FACE" className="logo-face" />
       </header>
 
