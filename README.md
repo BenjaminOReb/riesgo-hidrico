@@ -17,34 +17,37 @@ Herramienta web para calcular y visualizar índices de riesgo hídrico (sequía 
 
   ---
 
-##  Estructura\/backend
+##  Estructura
 
+```
+backend/
 ├─ app/
-│ ├─ routes.py
-│ ├─ procesar.py
-│ ├─ ubicaciones.py
-│ └─ database.py
-├─ uploads/ # directorio de NetCDF, GeoTIFF, recortes, fuzzy, índices
-├─ shapefiles/ # archivos .shp de regiones/provincias/comunas
+│  ├─ routes.py
+│  ├─ procesar.py
+│  ├─ ubicaciones.py
+│  └─ database.py
+├─ uploads/        # NetCDF, GeoTIFF, recortes, fuzzy, índices
+├─ shapefiles/     # .shp de regiones/provincias/comunas
 ├─ requirements.txt
 └─ server.py
 
-/frontend
+frontend/
 ├─ public/
 ├─ src/
-│ ├─ components/
-│ │ ├─ FileUpload.jsx
-│ │ ├─ ZonaSelector.jsx
-│ │ ├─ FechaSelector.jsx
-│ │ └─ MapaImagen.jsx
-│ ├─ assets/
-│ │ ├─ escudo-ubb.png
-│ │ └─ logo-face.png
-│ ├─ App.jsx
-│ ├─ App.css
-│ └─ main.jsx
+│  ├─ components/
+│  │  ├─ FileUpload.jsx
+│  │  ├─ ZonaSelector.jsx
+│  │  ├─ FechaSelector.jsx
+│  │  └─ MapaImagen.jsx
+│  ├─ assets/
+│  │  ├─ escudo-ubb.png
+│  │  └─ logo-face.png
+│  ├─ App.jsx
+│  ├─ App.css
+│  └─ main.jsx
 ├─ package.json
 └─ vite.config.js
+```
 
 ---
 
@@ -65,7 +68,7 @@ Herramienta web para calcular y visualizar índices de riesgo hídrico (sequía 
 - **Backend**
   - cd backend
   - python -m venv venv
-  - # Windows PowerShell:
+  - ## Windows PowerShell:
   - venv\Scripts\activate
   - pip install -r requirements.txt
   - python server.py
@@ -95,16 +98,18 @@ Herramienta web para calcular y visualizar índices de riesgo hídrico (sequía 
   ---
 
 ## API Endpoints
-**Ruta**	                        **Método**	            **Descripción**
-/upload	                              POST                  Subir 1 archivo NetCDF (recorta, fuzzy, riesgo).
-/api/ubicaciones	                  GET	                Jerarquía Región→Provincia→Comuna.
-/api/lista-zonas?zona=<tipo>          GET	                Listado de nombres según `zona=region
-/api/fechas-disponibles	              GET	                Lista de YYYY-MM disponibles.
-/api/riesgo-zona?...	              GET	                Estadísticas (min/max/mean) de riesgo por zona y fecha.
-/api/riesgo-geotiff?...	              GET	                GeoTIFF recortado para mostrar en mapa.
-/api/promedio-riesgo-zona?...	      GET	                GeoTIFF promedio últimos 24 meses.
-/api/geojson?...	                  GET	                GeoJSON de la zona administrativa.
-/descargas/geotiff/<nombre>	          GET	                Servir GeoTIFF guardado en /uploads/riesgo/geotiff/.
+
+| Ruta                                    | Método | Descripción                                                      |
+|-----------------------------------------|:------:|------------------------------------------------------------------|
+| `/upload`                               | POST   | Subir 1 NetCDF (recorta, fuzzy, riesgo).                         |
+| `/api/ubicaciones`                      | GET    | Devuelve jerarquía Región→Provincia→Comuna                       |
+| `/api/lista-zonas?zona=<tipo>`          | GET    | Listado de nombres según `zona=region|provincia|comuna`         |
+| `/api/fechas-disponibles`               | GET    | Lista de `YYYY-MM` disponibles                                   |
+| `/api/riesgo-zona?zona=&valor=&fecha=` | GET    | Estadísticas (min/max/mean) de riesgo por zona y fecha           |
+| `/api/riesgo-geotiff?...`               | GET    | GeoTIFF recortado para mostrar en mapa                           |
+| `/api/promedio-riesgo-zona?...`         | GET    | GeoTIFF promedio de los últimos 24 meses                         |
+| `/api/geojson?...`                      | GET    | GeoJSON de la zona administrativa                                |
+| `/descargas/geotiff/<nombre>`           | GET    | Servir GeoTIFF almacenado en `/uploads/riesgo/geotiff/`          |
 
  ---
 
