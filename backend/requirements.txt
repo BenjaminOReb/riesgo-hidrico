@@ -9,4 +9,6 @@ psycopg2-binary
 geopandas
 rasterio
 affine
-cftime  
+cftime 
+scipy
+python-dorenv
