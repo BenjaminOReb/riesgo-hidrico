@@ -55,11 +55,19 @@ frontend/
 
 - Python 3.8+ / Node 16+  
 - PostgreSQL  
-- Git LFS para grandes archivos NetCDF y shapefiles  
+- Git LFS para grandes archivos NetCDF y shapefiles
+- shapefiles: 
+      - .CGP
+      - .dbf
+      - .prj
+      - .shp
+      - .shx
 - Variables de entorno (en `.env`):
   ```bash
-  DATABASE_URL=postgresql://usuario:clave@host:puerto/dbname
-  FLASK_ENV=development
+  DB_HOST=localhost
+  DB_USER=nombre_usuario
+  DB_PASSWORD=contraseña
+  DB_NAME=nombre_db
 
 ---
 
