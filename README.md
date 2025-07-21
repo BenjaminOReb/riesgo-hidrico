@@ -3,17 +3,18 @@
 Herramienta web para calcular y visualizar índices de riesgo hídrico (sequía e inundación) a partir de datos NetCDF en Chile. Incluye:
 
 - **Backend** (Flask + PostgreSQL):  
-  - Procesamiento de NetCDF (recortes, capas fuzzy, cálculo de índice hídrico).  
+  - Procesamiento de NetCDF (recortes, capas fuzzy, cálculo de índice hídrico fuzzy y raw).  
   - Servicios REST para servir GeoTIFF recortados por zona y promedio de últimos 2 años.  
   - Almacenamiento de metadatos en base de datos y reuse de archivos procesados.  
 
 - **Frontend** (React + Leaflet):  
   - Subida de pares de archivos NetCDF (`pr` y `t2m`).  
   - Selector jerárquico de Región / Provincia / Comuna.  
-  - Selector de fecha (mensual) — solo meses disponibles.  
-  - Visualización de mapa con GeoTIFF superpuesto y contorno de la zona.  
-  - Opción de “Ver promedio últimos 2 años”.  
-  - Leyenda de gradiente de riesgo (azul → rojo).  
+  - Selector de fecha (mensual) — solo meses disponibles.
+  - Selector de tipo de mapa (Temperatura, Precipitación o Riesgo Hídrico)
+  - Visualización de mapas con GeoTIFF superpuesto y contorno de la zona.  
+  - Opción de “Ver promedio últimos 2 años” para mapas de riesgo hídrico.  
+  - Leyenda de gradiente de riesgo, temperatura o precipitación (azul → rojo).  
 
   ---
 
@@ -100,7 +101,11 @@ frontend/
   - El selector de fecha muestra solo los YYYY-MM disponibles.
   - Active Ver promedio últimos 2 años (checkbox).
 
+ - **Seleccionar tipo de mapa**
+  - Elija Riesgo/Temperatura/Precipitación.
+
  - **Visualización**
+  - Se visualiza los mapas segun el tipo de mapa seleccionado.
   - El mapa ajusta el zoom a la zona mostrando el GeoTIFF y el contorno administrativo.
 
   ---
@@ -111,13 +116,24 @@ frontend/
 |-----------------------------------------|:------:|------------------------------------------------------------------|
 | `/upload`                               | POST   | Subir 1 NetCDF (recorta, fuzzy, riesgo).                         |
 | `/api/ubicaciones`                      | GET    | Devuelve jerarquía Región→Provincia→Comuna                       |
-| `/api/lista-zonas?zona=<tipo>`          | GET    | Listado de nombres según `zona=region|provincia|comuna`         |
-| `/api/fechas-disponibles`               | GET    | Lista de `YYYY-MM` disponibles                                   |
-| `/api/riesgo-zona?zona=&valor=&fecha=` | GET    | Estadísticas (min/max/mean) de riesgo por zona y fecha           |
-| `/api/riesgo-geotiff?...`               | GET    | GeoTIFF recortado para mostrar en mapa                           |
-| `/api/promedio-riesgo-zona?...`         | GET    | GeoTIFF promedio de los últimos 24 meses                         |
-| `/api/geojson?...`                      | GET    | GeoJSON de la zona administrativa                                |
+| `/api/lista-zonas?zona=<tipo>`          | GET    | Listado de nombres según `zona=region|provincia|comuna`          |
+| `/api/riesgo-fuzzy-zona`                | GET    | Filtra índice de riesgo fuzzy por zona`                          |
+| `/api/riesgo-raw-zona`                  | GET    | Filtra índice de riesgo crudo por zona`                          |
+| `/api/riesgo-fuzzy-geotiff`             | GET    | GeoTIFF de riesgo fuzzy por zona                                 |
+| `/api/riesgo-raw-geotiff`               | GET    | GeoTIFF de riesgo crudo por zona                                 |
+| `/api/precipitacion-geotiff`            | GET    | GeoTIFF de precipitación por zona                                |
+| `/api/precipitacion-baja-fuzzy-geotiff` | GET    | GeoTIFF de grados de pertenencia a precipitación baja por zona   |
+| `/api/precipitacion-baja-fuzzy-geotiff` | GET    | GeoTIFF de grados de pertenencia a precipitación media por zona  |
+| `/api/precipitacion-baja-fuzzy-geotiff` | GET    | GeoTIFF de grados de pertenencia a precipitación alta por zona   |
+| `/api/precipitacion-geotiff`            | GET    | GeoTIFF de temperatura por zona                                  |
+| `/api/precipitacion-baja-fuzzy-geotiff` | GET    | GeoTIFF de grados de pertenencia a temperatura baja por zona     |
+| `/api/precipitacion-baja-fuzzy-geotiff` | GET    | GeoTIFF de grados de pertenencia a temperatura media por zona    |
+| `/api/precipitacion-baja-fuzzy-geotiff` | GET    | GeoTIFF de grados de pertenencia a temperatura alta por zona     |
 | `/descargas/geotiff/<nombre>`           | GET    | Servir GeoTIFF almacenado en `/uploads/riesgo/geotiff/`          |
+| `/api/geojson`                          | GET    | GeoJSON de la zona indicada                                      |
+| `/api/fechas-disponibles`               | GET    | Lista de meses y años disponibles                                |
+| `/api/promedio-riesgo-fuzzy-zona`       | GET    | Geotiff promedio de riesgo fuzzy de los ultimos 24               |
+| `/api/promedio-riesgo-raw-zona`         | GET    | Geotiff promedio de riesgo raw de los ultimos 24                 |
 
  ---
 
