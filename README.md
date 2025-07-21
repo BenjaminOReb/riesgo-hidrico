@@ -123,28 +123,28 @@ frontend/
 
 ## API Endpoints
 
-| Ruta                                                         |   Método  | Descripción                                                                         |     |                                          |
-| ------------------------------------------------------------ | :-------: | ----------------------------------------------------------------------------------- | --- | ---------------------------------------- |
-| `/upload`                                                    |    POST   | Subir 1 NetCDF (recorta, fuzzy, índices raw+fuzzy)                                  |     |                                          |
-| `/api/ubicaciones`                                           |    GET    | Jerarquía Región→Provincia→Comuna                                                   |     |                                          |
-| `/api/lista-zonas?zona={region/provincia/comuna}\`                                                                           | GET | Listado de nombres según el tipo de zona |
-| `/api/riesgo-fuzzy-geotiff?zona=&valor=&fecha=`       | GET    | GeoTIFF de índice fuzzy por zona (variables lingüísticas *baja*, *media*, *alta*) |     |                                          |
-| `/api/riesgo-raw-zona?zona=&valor=&fecha=`                   |    GET    | Stats de índice raw por zona (JSON)                                                 |     |                                          |
-| `/api/riesgo-fuzzy-geotiff?zona=&valor=&fecha=`              |    GET    | GeoTIFF de índice fuzzy recortado por zona (fuzzy con variables lingüísticas)                                         |     |                                          |
-| `/api/riesgo-raw-geotiff?zona=&valor=&fecha=`                |    GET    | GeoTIFF de índice raw recortado por zona                                            |     |                                          |
-| `/api/precipitacion-geotiff?zona=&valor=&fecha=`             |    GET    | GeoTIFF de precipitación (mm) recortado por zona                                    |     |                                          |
-| `/api/precipitacion-baja-fuzzy-geotiff?zona=&valor=&fecha=`  |    GET    | GeoTIFF de grado de pertenencia baja de precipitación                               |     |                                          |
-| `/api/precipitacion-media-fuzzy-geotiff?zona=&valor=&fecha=` |    GET    | GeoTIFF de grado de pertenencia media de precipitación                              |     |                                          |
-| `/api/precipitacion-alta-fuzzy-geotiff?zona=&valor=&fecha=`  |    GET    | GeoTIFF de grado de pertenencia alta de precipitación                               |     |                                          |
-| `/api/temperatura-geotiff?zona=&valor=&fecha=`               |    GET    | GeoTIFF de temperatura (°C) recortado por zona                                      |     |                                          |
-| `/api/temperatura-baja-fuzzy-geotiff?zona=&valor=&fecha=`    |    GET    | GeoTIFF de grado de pertenencia baja de temperatura                                 |     |                                          |
-| `/api/temperatura-media-fuzzy-geotiff?zona=&valor=&fecha=`   |    GET    | GeoTIFF de grado de pertenencia media de temperatura                                |     |                                          |
-| `/api/temperatura-alta-fuzzy-geotiff?zona=&valor=&fecha=`    |    GET    | GeoTIFF de grado de pertenencia alta de temperatura                                 |     |                                          |
-| `/api/geojson?region/provincia/comuna=`                                                                           | GET | GeoJSON de la zona indicada              |
-| `/api/fechas-disponibles`                                    |    GET    | Listado de meses (`YYYY-MM`) disponibles para riesgo fuzzy final                    |     |                                          |
-| `/api/promedio-riesgo-fuzzy-zona?zona=&valor=`               |    GET    | GeoTIFF de promedio de índice fuzzy de los últimos 24 meses (sin parámetro `fecha`) |     |                                          |
-| `/api/promedio-riesgo-raw-zona?zona=&valor=`                 |    GET    | GeoTIFF de promedio de índice raw de los últimos 24 meses (sin parámetro `fecha`)   |     |                                          |
-| `/descargas/geotiff/<nombre>`                                |    GET    | Descarga directa de GeoTIFF ya generado (en `uploads/.../geotiff/`)                 |     |                                          |
+| Ruta                                                         |   Método  | Descripción                                                                         |     
+| ------------------------------------------------------------ | :-------: | ----------------------------------------------------------------------------------- |
+| `/upload`                                                    |    POST   | Subir 1 NetCDF (recorta, fuzzy, índices raw+fuzzy)                                  |     
+| `/api/ubicaciones`                                           |    GET    | Jerarquía Región→Provincia→Comuna                                                   |     
+| `/api/lista-zonas?zona={region/provincia/comuna}\`           | GET       | Listado de nombres según el tipo de zona                                            |
+| `/api/riesgo-fuzzy-geotiff?zona=&valor=&fecha=`              | GET       | GeoTIFF de índice fuzzy por zona (variables lingüísticas *baja*, *media*, *alta*)   |     
+| `/api/riesgo-raw-zona?zona=&valor=&fecha=`                   |    GET    | Stats de índice raw por zona (JSON)                                                 |     
+| `/api/riesgo-fuzzy-geotiff?zona=&valor=&fecha=`              |    GET    | GeoTIFF de índice fuzzy recortado por zona (fuzzy con variables lingüísticas)       |     
+| `/api/riesgo-raw-geotiff?zona=&valor=&fecha=`                |    GET    | GeoTIFF de índice raw recortado por zona                                            |     
+| `/api/precipitacion-geotiff?zona=&valor=&fecha=`             |    GET    | GeoTIFF de precipitación (mm) recortado por zona                                    |     
+| `/api/precipitacion-baja-fuzzy-geotiff?zona=&valor=&fecha=`  |    GET    | GeoTIFF de grado de pertenencia baja de precipitación                               |     
+| `/api/precipitacion-media-fuzzy-geotiff?zona=&valor=&fecha=` |    GET    | GeoTIFF de grado de pertenencia media de precipitación                              |     
+| `/api/precipitacion-alta-fuzzy-geotiff?zona=&valor=&fecha=`  |    GET    | GeoTIFF de grado de pertenencia alta de precipitación                               |     
+| `/api/temperatura-geotiff?zona=&valor=&fecha=`               |    GET    | GeoTIFF de temperatura (°C) recortado por zona                                      |     
+| `/api/temperatura-baja-fuzzy-geotiff?zona=&valor=&fecha=`    |    GET    | GeoTIFF de grado de pertenencia baja de temperatura                                 |     
+| `/api/temperatura-media-fuzzy-geotiff?zona=&valor=&fecha=`   |    GET    | GeoTIFF de grado de pertenencia media de temperatura                                |     
+| `/api/temperatura-alta-fuzzy-geotiff?zona=&valor=&fecha=`    |    GET    | GeoTIFF de grado de pertenencia alta de temperatura                                 |     
+| `/api/geojson?region/provincia/comuna=`                      | GET       | GeoJSON de la zona indicada                                                         |
+| `/api/fechas-disponibles`                                    |    GET    | Listado de meses (`YYYY-MM`) disponibles para riesgo fuzzy final                    |     
+| `/api/promedio-riesgo-fuzzy-zona?zona=&valor=`               |    GET    | GeoTIFF de promedio de índice fuzzy de los últimos 24 meses (sin parámetro `fecha`) |     
+| `/api/promedio-riesgo-raw-zona?zona=&valor=`                 |    GET    | GeoTIFF de promedio de índice raw de los últimos 24 meses (sin parámetro `fecha`)   |     
+| `/descargas/geotiff/<nombre>`                                |    GET    | Descarga directa de GeoTIFF ya generado (en `uploads/.../geotiff/`)                 |     
 
 
  ---
