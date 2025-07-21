@@ -10,15 +10,17 @@ import tempfile
 import uuid
 import geopandas as gpd
 from app.database import get_connection
-from app.ubicaciones import cargar_jerarquia_ubicaciones
+from app.ubicaciones import (
+    cargar_jerarquia_ubicaciones,
+    obtener_zona_gdf)
 from app.procesar import (
     recortar_ultimos_5_anos,
     generar_capas_fuzzy,
-    calcular_indice_riesgo,
-    filtrar_riesgo_por_zona,
-    obtener_zona_gdf,
+    calcular_indice_riesgo_fuzzy,
+    calcular_indice_riesgo_raw,
     calcular_fecha_desde_indice,
-    generar_geotiff_riesgo_zona
+    filtrar_riesgo_por_zona,
+    generar_geotiff_zona
 )
 
 #Blueprint para organizar las rutas
@@ -31,43 +33,112 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 @routes.route('/upload', methods=['POST'])
 def upload_file():
-
-    # Endpoint para subir dos archivos NetCDF (pr y t2m), generar sus capas fuzzy,
-    # calcular el índice de riesgo hídrico y almacenar tanto los archivos resultantes
-    # como sus metadatos en la base de datos, evitando duplicados y regenerando
-    # automáticamente el archivo de riesgo si falta en disco.
-
-    # 1) Valida que venga un archivo en el request
     if 'file' not in request.files:
         return jsonify({'error': 'Archivo no encontrado'}), 400
 
-    file = request.files['file']
+    # 1) Guardar raw
+    file     = request.files['file']
     filename = secure_filename(file.filename)
-
-    # Carpeta para archivos originales raw/
-    raw_dir = os.path.join(UPLOAD_FOLDER, 'raw')
+    raw_dir  = os.path.join(UPLOAD_FOLDER, 'raw')
     os.makedirs(raw_dir, exist_ok=True)
     raw_path = os.path.join(raw_dir, filename)
-    file.save(raw_path)     # Guardar el .nc original
+    file.save(raw_path)
 
     try:
-        # 2) Recorta los últimos 60 meses
-        recortado_path = recortar_ultimos_5_anos(raw_path)
-
-        # 3) Genera las capas fuzzy (baja, media, alta)
-        resultado_fuzzy = generar_capas_fuzzy(recortado_path)
-        ruta_fuzzy  = resultado_fuzzy['archivo_salida']
-        tipo        = resultado_fuzzy['tipo_variable']   # 'pr' o 't2m'
-        nombre_base = resultado_fuzzy['nombre_base']     # p.ej. '2019-05'
-
-        # Fechas inicial y final para el archivo fuzzy
-        fecha_ini_fuzzy = calcular_fecha_desde_indice(nombre_base, 1)
-        fecha_fin_fuzzy = calcular_fecha_desde_indice(nombre_base, 60)
-
         conn = get_connection()
         cur  = conn.cursor()
 
-        # 4) Inserta registro fuzzy si no existe
+        # 2) Recortar últimos 60 meses
+        recortado_path = recortar_ultimos_5_anos(raw_path)
+        nombre_base    = os.path.basename(recortado_path).split("_")[1]  # 'YYYY-MM'
+        tipo_rec       = os.path.basename(recortado_path).split("_")[0]  # 'pr' o 't2m'
+
+        # 2a) Registrar recortado si no existe
+        cur.execute("SELECT 1 FROM archivos WHERE ruta=%s", (recortado_path,))
+        if not cur.fetchone():
+            fecha_ini = calcular_fecha_desde_indice(nombre_base, 1)
+            fecha_fin = calcular_fecha_desde_indice(nombre_base, 60)
+            cur.execute("""
+                INSERT INTO archivos (
+                  nombre, ruta, variables, tipo_archivo,
+                  nombre_base, fecha_subida,
+                  fecha_inicial_datos, fecha_final_datos,
+                  es_riesgo_final
+                ) VALUES (%s,%s,%s,%s,%s,NOW(),%s,%s,%s)
+            """, (
+                os.path.basename(recortado_path),
+                recortado_path,
+                tipo_rec,
+                tipo_rec,
+                nombre_base,
+                fecha_ini,
+                fecha_fin,
+                False
+            ))
+            conn.commit()
+
+        # 3) Generar riesgo_raw si ya existen ambos recortados
+        carpeta_rec = os.path.dirname(recortado_path)
+        otra_var    = 't2m' if tipo_rec == 'pr' else 'pr'
+        otro_rec    = os.path.join(carpeta_rec, f"{otra_var}_{nombre_base}_recortado.nc")
+
+        if os.path.exists(otro_rec):
+            pr_rec  = recortado_path if tipo_rec == 'pr' else otro_rec
+            t2m_rec = recortado_path if tipo_rec == 't2m' else otro_rec
+
+            cur.execute("""
+                SELECT ruta FROM archivos
+                WHERE tipo_archivo = 'riesgo_raw'
+                  AND nombre_base   = %s
+            """, (nombre_base,))
+            fila_raw = cur.fetchone()
+
+            if fila_raw:
+                ruta_raw_bd = fila_raw[0]
+                if not os.path.exists(ruta_raw_bd):
+                    res_raw = calcular_indice_riesgo_raw(pr_rec, t2m_rec)
+                    cur.execute("""
+                        UPDATE archivos
+                        SET ruta=%s
+                        WHERE tipo_archivo='riesgo_raw' AND nombre_base=%s
+                    """, (res_raw['archivo'], nombre_base))
+                    conn.commit()
+                ruta_raw = ruta_raw_bd
+            else:
+                res_raw = calcular_indice_riesgo_raw(pr_rec, t2m_rec)
+                ruta_raw = res_raw['archivo']
+                fecha_ini = calcular_fecha_desde_indice(nombre_base, 1)
+                fecha_fin = calcular_fecha_desde_indice(nombre_base, 60)
+                cur.execute("""
+                    INSERT INTO archivos (
+                      nombre, ruta, variables, tipo_archivo,
+                      nombre_base, fecha_subida,
+                      fecha_inicial_datos, fecha_final_datos,
+                      es_riesgo_final
+                    ) VALUES (%s,%s,%s,%s,%s,NOW(),%s,%s,%s)
+                """, (
+                    os.path.basename(ruta_raw),
+                    ruta_raw,
+                    'riesgo_raw',
+                    'riesgo_raw',
+                    nombre_base,
+                    fecha_ini,
+                    fecha_fin,
+                    True
+                ))
+                conn.commit()
+        else:
+            ruta_raw = None
+
+        # 4) Generar capas fuzzy
+        resultado_fuzzy = generar_capas_fuzzy(recortado_path)
+        ruta_fuzzy      = resultado_fuzzy['archivo_salida']
+        tipo            = resultado_fuzzy['tipo_variable']
+        nombre_base     = resultado_fuzzy['nombre_base']
+
+        fecha_ini_fuzzy = calcular_fecha_desde_indice(nombre_base, 1)
+        fecha_fin_fuzzy = calcular_fecha_desde_indice(nombre_base, 60)
+
         cur.execute(
             "SELECT 1 FROM archivos WHERE nombre=%s OR ruta=%s",
             (os.path.basename(ruta_fuzzy), ruta_fuzzy)
@@ -88,49 +159,40 @@ def upload_file():
                 nombre_base,
                 fecha_ini_fuzzy,
                 fecha_fin_fuzzy,
-                False       # no es archivo de riesgo final
+                False
             ))
             conn.commit()
 
-        # 5) Comprueba si existe el otro fuzzy complementario (pr vs t2m)
-        fuzzy_dir   = os.path.dirname(ruta_fuzzy)
-        otro_var    = 't2m' if tipo=='pr' else 'pr'
-        nombre_otro = f"fuzzy_{otro_var}_{nombre_base}.nc"
-        comp_path   = os.path.join(fuzzy_dir, nombre_otro)
+        # 5) Generar riesgo_fuzzy cuando existan ambas fuzzy
+        fuzzy_dir = os.path.dirname(ruta_fuzzy)
+        otro_var  = 't2m' if tipo == 'pr' else 'pr'
+        comp_path = os.path.join(fuzzy_dir, f"fuzzy_{otro_var}_{nombre_base}.nc")
 
         if os.path.exists(comp_path):
-            # Determinar rutas completas para pr y t2m
-            pr_path  = ruta_fuzzy   if tipo=='pr'  else comp_path
-            t2m_path = ruta_fuzzy   if tipo=='t2m' else comp_path
+            pr_fuzzy  = ruta_fuzzy if tipo == 'pr' else comp_path
+            t2m_fuzzy = ruta_fuzzy if tipo == 't2m' else comp_path
 
-            # 6) ¿Ya hay registro de archivo de riesgo en BD?
             cur.execute("""
                 SELECT ruta FROM archivos
-                WHERE tipo_archivo='riesgo' AND nombre_base=%s
+                WHERE tipo_archivo='riesgo_fuzzy' AND nombre_base=%s
             """, (nombre_base,))
             fila = cur.fetchone()
 
             if fila:
-                riesgo_path = fila[0]
-                # 7) Si el fichero no existe en disco, vuelve a generarse y actualiza BD
-                if not os.path.exists(riesgo_path):
-                    resultado_riesgo = calcular_indice_riesgo(pr_path, t2m_path)
-                    riesgo_path      = resultado_riesgo['archivo']
-                    # Actualizar la ruta en BD
+                riesgo_fuzzy_path = fila[0]
+                if not os.path.exists(riesgo_fuzzy_path):
+                    res_riesgo = calcular_indice_riesgo_fuzzy(pr_fuzzy, t2m_fuzzy)
                     cur.execute("""
                         UPDATE archivos
                         SET ruta=%s
-                        WHERE nombre_base=%s AND tipo_archivo='riesgo'
-                    """, (riesgo_path, nombre_base))
+                        WHERE tipo_archivo='riesgo_fuzzy' AND nombre_base=%s
+                    """, (res_riesgo['archivo'], nombre_base))
                     conn.commit()
             else:
-                # 8) No había registro: calcular y guardar nuevo archivo de riesgo
-                resultado_riesgo = calcular_indice_riesgo(pr_path, t2m_path)
-                riesgo_path      = resultado_riesgo['archivo']
-                # Obtener fechas para BD
+                res_riesgo = calcular_indice_riesgo_fuzzy(pr_fuzzy, t2m_fuzzy)
+                riesgo_fuzzy_path = res_riesgo['archivo']
                 fecha_ini_r = calcular_fecha_desde_indice(nombre_base, 1)
                 fecha_fin_r = calcular_fecha_desde_indice(nombre_base, 60)
-                # Insertar el registro de riesgo
                 cur.execute("""
                     INSERT INTO archivos (
                       nombre, ruta, variables, tipo_archivo,
@@ -139,27 +201,30 @@ def upload_file():
                       es_riesgo_final
                     ) VALUES (%s,%s,%s,%s,%s,NOW(),%s,%s,%s)
                 """, (
-                    os.path.basename(riesgo_path),
-                    riesgo_path,
-                    'riesgo_hidrico',
-                    'riesgo',
+                    os.path.basename(riesgo_fuzzy_path),
+                    riesgo_fuzzy_path,
+                    'riesgo_fuzzy',
+                    'riesgo_fuzzy',
                     nombre_base,
                     fecha_ini_r,
                     fecha_fin_r,
                     True
                 ))
                 conn.commit()
+        else:
+            riesgo_fuzzy_path = None
 
         cur.close()
         conn.close()
 
-        # 9) Responder con detalles de los archivos procesados
+        # 6) Respuesta con todos los nombres generados
         return jsonify({
-            'mensaje'      : 'Archivos procesados correctamente',
-            'nombre_base'  : nombre_base,
-            'fuzzy'        : os.path.basename(ruta_fuzzy),
-            # si existe riesgo_path, lo devuelve; si no, será None
-            'riesgo'       : locals().get('riesgo_path', None)
+            'mensaje'        : 'Archivos procesados correctamente',
+            'nombre_base'    : nombre_base,
+            'recortado'      : os.path.basename(recortado_path),
+            'riesgo_raw'     : ruta_raw and os.path.basename(ruta_raw),
+            'fuzzy'          : os.path.basename(ruta_fuzzy),
+            'riesgo_fuzzy'   : riesgo_fuzzy_path and os.path.basename(riesgo_fuzzy_path)
         })
 
     except Exception as e:
@@ -206,10 +271,10 @@ def lista_zonas():
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
-@routes.route('/api/riesgo-zona', methods=['GET'])
-def riesgo_por_zona():
+@routes.route('/api/riesgo-fuzzy-zona', methods=['GET'])
+def riesgo_fuzzy_por_zona():
 
-    # Filtra el índice de riesgo por la geometría de la zona indicada
+    # Filtra el índice de riesgo_fuzzy por la geometría de la zona indicada
     # y devuelve un JSON con valores puntuales.
 
     zona = request.args.get('zona')
@@ -219,7 +284,7 @@ def riesgo_por_zona():
     if not zona or not valor or not fecha:
         return jsonify({'error': 'Faltan parámetros'}), 400
 
-    ruta_riesgo = f"uploads/riesgo/riesgo_{fecha}.nc"
+    ruta_riesgo = f"uploads/riesgo_fuzzy/riesgo_fuzzy_{fecha}.nc"
     if not os.path.exists(ruta_riesgo):
         return jsonify({'error': 'Archivo no encontrado'}), 404
 
@@ -231,8 +296,33 @@ def riesgo_por_zona():
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
-@routes.route('/api/riesgo-geotiff', methods=['GET'])
-def servir_riesgo_geotiff():
+@routes.route('/api/riesgo-raw-zona', methods=['GET'])
+def riesgo_raw_por_zona():
+
+    # Filtra el índice de riesgo_raw por la geometría de la zona indicada
+    # y devuelve un JSON con valores puntuales.
+
+    zona = request.args.get('zona')
+    valor = request.args.get('valor')
+    fecha = request.args.get('fecha')
+
+    if not zona or not valor or not fecha:
+        return jsonify({'error': 'Faltan parámetros'}), 400
+
+    ruta_riesgo = f"uploads/riesgo_raw/riesgo_raw_{fecha}.nc"
+    if not os.path.exists(ruta_riesgo):
+        return jsonify({'error': 'Archivo no encontrado'}), 404
+
+    try:
+        zona_gdf = obtener_zona_gdf(zona, valor)
+        resultado = filtrar_riesgo_por_zona(zona_gdf, ruta_riesgo)
+        return jsonify(resultado)
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@routes.route('/api/riesgo-fuzzy-geotiff', methods=['GET'])
+def servir_riesgo_fuzzy_geotiff():
 
     #Devuelve un GeoTIFF recortado al área de la zona y al mes solicitado.
     #Busca en BD el NetCDF que cubra la fecha, calcula el índice de tiempo
@@ -249,13 +339,13 @@ def servir_riesgo_geotiff():
         # Normalizar la fecha a "YYYY-MM"
         fecha_texto = fecha.strip()
 
-        # Busca en la BD el archivo de riesgo que cubra ese mes
+        # Busca en la BD el archivo de riesgo_fuzzy que cubra ese mes
         conn = get_connection()
         cur = conn.cursor()
         cur.execute("""
             SELECT ruta, nombre_base, fecha_inicial_datos
             FROM archivos
-            WHERE tipo_archivo   = 'riesgo'
+            WHERE tipo_archivo   = 'riesgo_fuzzy'
               AND es_riesgo_final = TRUE
               AND fecha_inicial_datos <= %s
               AND fecha_final_datos   >= %s
@@ -268,7 +358,7 @@ def servir_riesgo_geotiff():
 
         if not resultado:
             return jsonify({
-                'error': f'No se encontró un archivo de riesgo que abarque {fecha_texto}'
+                'error': f'No se encontró un archivo de riesgo_fuzzy que abarque {fecha_texto}'
             }), 404
 
         ruta_riesgo, nombre_base, fecha_inicial_str = resultado
@@ -285,20 +375,347 @@ def servir_riesgo_geotiff():
 
         # Genera y devolve el GeoTIFF
         zona_gdf = obtener_zona_gdf(zona, valor).to_crs(epsg=4326)
-        ruta_tif = generar_geotiff_riesgo_zona(zona_gdf, ruta_riesgo, meses_diferencia)
+        ruta_tif = generar_geotiff_zona(zona_gdf, ruta_riesgo, meses_diferencia,'riesgo_fuzzy')
 
         return send_file(ruta_tif, mimetype='image/tiff')
 
     except Exception as e:
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
-    
+
+@routes.route('/api/riesgo-raw-geotiff', methods=['GET'])
+def servir_riesgo_raw_geotiff():
+    zona  = request.args.get('zona')
+    valor = request.args.get('valor')
+    fecha = request.args.get('fecha')  # "YYYY-MM"
+    if not zona or not valor or not fecha:
+        return jsonify({'error': 'Faltan parámetros'}), 400
+
+    # 1) Buscar en BD el NetCDF de riesgo_raw que cubra esa fecha
+    conn = get_connection()
+    cur  = conn.cursor()
+    cur.execute("""
+        SELECT ruta, nombre_base, fecha_inicial_datos
+        FROM archivos
+        WHERE tipo_archivo = 'riesgo_raw'
+          AND fecha_inicial_datos <= %s
+          AND fecha_final_datos   >= %s
+        ORDER BY fecha_final_datos DESC
+        LIMIT 1
+    """, (fecha, fecha))
+    fila = cur.fetchone()
+    cur.close(); conn.close()
+
+    if not fila:
+        return jsonify({'error': f'No se encontró un archivo de riesgo_raw que abarque {fecha}'}), 404
+
+    ruta_raw, nombre_base, fecha_ini = fila
+
+    # 2) Calcular el índice de tiempo (0–59)
+    fecha_pedida  = datetime.datetime.strptime(fecha, "%Y-%m").date().replace(day=1)
+    fecha_inicial = datetime.datetime.strptime(fecha_ini[:7], "%Y-%m").date().replace(day=1)
+    meses_index   = (fecha_pedida.year - fecha_inicial.year) * 12 + (fecha_pedida.month - fecha_inicial.month)
+    if meses_index < 0 or meses_index >= 60:
+        return jsonify({'error': 'Índice de tiempo fuera de rango (0–59)'}), 400
+
+    # 3) Generar y devolver el GeoTIFF
+    zona_gdf = obtener_zona_gdf(zona, valor).to_crs(epsg=4326)
+    ruta_tif = generar_geotiff_zona(zona_gdf, ruta_raw, meses_index, 'riesgo_raw')
+
+    return send_file(ruta_tif, mimetype='image/tiff')
+
+@routes.route('/api/precipitacion-geotiff', methods=['GET'])
+def servir_precipitacion_geotiff():
+    zona  = request.args.get('zona')
+    valor = request.args.get('valor')
+    fecha = request.args.get('fecha')
+    if not zona or not valor or not fecha:
+        return jsonify({'error': 'Faltan parámetros'}), 400
+
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT ruta, nombre_base, fecha_inicial_datos
+        FROM archivos
+        WHERE tipo_archivo = 'pr'
+          AND fecha_inicial_datos <= %s
+          AND fecha_final_datos   >= %s
+        ORDER BY fecha_final_datos DESC
+        LIMIT 1
+    """, (fecha, fecha))
+    fila = cur.fetchone()
+    cur.close(); conn.close()
+
+    if not fila:
+        return jsonify({'error': f'No hay datos de precipitación para {fecha}'}), 404
+
+    ruta_pr, nombre_base, fecha_ini = fila
+    fecha_pedida  = datetime.datetime.strptime(fecha, "%Y-%m").date().replace(day=1)
+    fecha_inicial = datetime.datetime.strptime(fecha_ini[:7], "%Y-%m").date().replace(day=1)
+    meses_index   = (fecha_pedida.year - fecha_inicial.year) * 12 + (fecha_pedida.month - fecha_inicial.month)
+
+    zona_gdf = obtener_zona_gdf(zona, valor).to_crs(epsg=4326)
+    ruta_tif = generar_geotiff_zona(zona_gdf, ruta_pr, meses_index, 'pr')
+
+    return send_file(ruta_tif, mimetype='image/tiff')
+
+@routes.route('/api/precipitacion-baja-fuzzy-geotiff', methods=['GET'])
+def servir_precipitacion_baja_fuzzy_geotiff():
+    zona  = request.args.get('zona')
+    valor = request.args.get('valor')
+    fecha = request.args.get('fecha')
+    if not zona or not valor or not fecha:
+        return jsonify({'error': 'Faltan parámetros'}), 400
+
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT ruta, nombre_base, fecha_inicial_datos
+        FROM archivos
+        WHERE tipo_archivo = 'pr'
+          AND nombre       LIKE 'fuzzy_pr_%%'
+          AND fecha_inicial_datos <= %s
+          AND fecha_final_datos   >= %s
+        ORDER BY fecha_final_datos DESC
+        LIMIT 1
+    """, (fecha, fecha))
+    fila = cur.fetchone()
+    cur.close(); conn.close()
+
+    if not fila:
+        return jsonify({'error': f'No hay datos fuzzy de precipitación para {fecha}'}), 404
+
+    ruta_fuzzy_pr, nombre_base, fecha_ini = fila
+    fecha_pedida  = datetime.datetime.strptime(fecha, "%Y-%m").date().replace(day=1)
+    fecha_inicial = datetime.datetime.strptime(fecha_ini[:7], "%Y-%m").date().replace(day=1)
+    meses_index   = (fecha_pedida.year - fecha_inicial.year) * 12 + (fecha_pedida.month - fecha_inicial.month)
+
+    zona_gdf = obtener_zona_gdf(zona, valor).to_crs(epsg=4326)
+    ruta_tif = generar_geotiff_zona(zona_gdf, ruta_fuzzy_pr, meses_index, 'pr_baja')
+
+    return send_file(ruta_tif, mimetype='image/tiff')
+
+@routes.route('/api/precipitacion-media-fuzzy-geotiff', methods=['GET'])
+def servir_precipitacion_media_fuzzy_geotiff():
+    zona  = request.args.get('zona')
+    valor = request.args.get('valor')
+    fecha = request.args.get('fecha')
+    if not zona or not valor or not fecha:
+        return jsonify({'error': 'Faltan parámetros'}), 400
+
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT ruta, nombre_base, fecha_inicial_datos
+        FROM archivos
+        WHERE tipo_archivo = 'pr'
+          AND nombre       LIKE 'fuzzy_pr_%%'
+          AND fecha_inicial_datos <= %s
+          AND fecha_final_datos   >= %s
+        ORDER BY fecha_final_datos DESC
+        LIMIT 1
+    """, (fecha, fecha))
+    fila = cur.fetchone()
+    cur.close(); conn.close()
+
+    if not fila:
+        return jsonify({'error': f'No hay datos fuzzy de precipitación para {fecha}'}), 404
+
+    ruta_fuzzy_pr, nombre_base, fecha_ini = fila
+    fecha_pedida  = datetime.datetime.strptime(fecha, "%Y-%m").date().replace(day=1)
+    fecha_inicial = datetime.datetime.strptime(fecha_ini[:7], "%Y-%m").date().replace(day=1)
+    meses_index   = (fecha_pedida.year - fecha_inicial.year) * 12 + (fecha_pedida.month - fecha_inicial.month)
+
+    zona_gdf = obtener_zona_gdf(zona, valor).to_crs(epsg=4326)
+    ruta_tif = generar_geotiff_zona(zona_gdf, ruta_fuzzy_pr, meses_index, 'pr_media')
+
+    return send_file(ruta_tif, mimetype='image/tiff')
+
+@routes.route('/api/precipitacion-alta-fuzzy-geotiff', methods=['GET'])
+def servir_precipitacion_alta_fuzzy_geotiff():
+    zona  = request.args.get('zona')
+    valor = request.args.get('valor')
+    fecha = request.args.get('fecha')
+    if not zona or not valor or not fecha:
+        return jsonify({'error': 'Faltan parámetros'}), 400
+
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT ruta, nombre_base, fecha_inicial_datos
+        FROM archivos
+        WHERE tipo_archivo = 'pr'
+          AND nombre       LIKE 'fuzzy_pr_%%'
+          AND fecha_inicial_datos <= %s
+          AND fecha_final_datos   >= %s
+        ORDER BY fecha_final_datos DESC
+        LIMIT 1
+    """, (fecha, fecha))
+    fila = cur.fetchone()
+    cur.close(); conn.close()
+
+    if not fila:
+        return jsonify({'error': f'No hay datos fuzzy de precipitación para {fecha}'}), 404
+
+    ruta_fuzzy_pr, nombre_base, fecha_ini = fila
+    fecha_pedida  = datetime.datetime.strptime(fecha, "%Y-%m").date().replace(day=1)
+    fecha_inicial = datetime.datetime.strptime(fecha_ini[:7], "%Y-%m").date().replace(day=1)
+    meses_index   = (fecha_pedida.year - fecha_inicial.year) * 12 + (fecha_pedida.month - fecha_inicial.month)
+
+    zona_gdf = obtener_zona_gdf(zona, valor).to_crs(epsg=4326)
+    ruta_tif = generar_geotiff_zona(zona_gdf, ruta_fuzzy_pr, meses_index, 'pr_alta')
+
+    return send_file(ruta_tif, mimetype='image/tiff')
+
+@routes.route('/api/temperatura-geotiff', methods=['GET'])
+def servir_temperatura_geotiff():
+    zona  = request.args.get('zona')
+    valor = request.args.get('valor')
+    fecha = request.args.get('fecha')
+    if not zona or not valor or not fecha:
+        return jsonify({'error': 'Faltan parámetros'}), 400
+
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT ruta, nombre_base, fecha_inicial_datos
+        FROM archivos
+        WHERE tipo_archivo = 't2m'
+          AND fecha_inicial_datos <= %s
+          AND fecha_final_datos   >= %s
+        ORDER BY fecha_final_datos DESC
+        LIMIT 1
+    """, (fecha, fecha))
+    fila = cur.fetchone()
+    cur.close(); conn.close()
+
+    if not fila:
+        return jsonify({'error': f'No hay datos de temperatura para {fecha}'}), 404
+
+    ruta_t2m, nombre_base, fecha_ini = fila
+    fecha_pedida  = datetime.datetime.strptime(fecha, "%Y-%m").date().replace(day=1)
+    fecha_inicial = datetime.datetime.strptime(fecha_ini[:7], "%Y-%m").date().replace(day=1)
+    meses_index   = (fecha_pedida.year - fecha_inicial.year) * 12 + (fecha_pedida.month - fecha_inicial.month)
+
+    zona_gdf = obtener_zona_gdf(zona, valor).to_crs(epsg=4326)
+    ruta_tif = generar_geotiff_zona(zona_gdf, ruta_t2m, meses_index, 't2m')
+
+    return send_file(ruta_tif, mimetype='image/tiff')
+
+@routes.route('/api/temperatura-baja-fuzzy-geotiff', methods=['GET'])
+def servir_temperatura_baja_fuzzy_geotiff():
+    zona  = request.args.get('zona')
+    valor = request.args.get('valor')
+    fecha = request.args.get('fecha')
+    if not zona or not valor or not fecha:
+        return jsonify({'error': 'Faltan parámetros'}), 400
+
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT ruta, nombre_base, fecha_inicial_datos
+        FROM archivos
+        WHERE tipo_archivo = 't2m'
+          AND nombre       LIKE 'fuzzy_t2m_%%'
+          AND fecha_inicial_datos <= %s
+          AND fecha_final_datos   >= %s
+        ORDER BY fecha_final_datos DESC
+        LIMIT 1
+    """, (fecha, fecha))
+    fila = cur.fetchone()
+    cur.close(); conn.close()
+
+    if not fila:
+        return jsonify({'error': f'No hay datos fuzzy de temperatura para {fecha}'}), 404
+
+    ruta_fuzzy_t2m, nombre_base, fecha_ini = fila
+    fecha_pedida  = datetime.datetime.strptime(fecha, "%Y-%m").date().replace(day=1)
+    fecha_inicial = datetime.datetime.strptime(fecha_ini[:7], "%Y-%m").date().replace(day=1)
+    meses_index   = (fecha_pedida.year - fecha_inicial.year) * 12 + (fecha_pedida.month - fecha_inicial.month)
+
+    zona_gdf = obtener_zona_gdf(zona, valor).to_crs(epsg=4326)
+    ruta_tif = generar_geotiff_zona(zona_gdf, ruta_fuzzy_t2m, meses_index, 't2m_baja')
+
+    return send_file(ruta_tif, mimetype='image/tiff')
+
+@routes.route('/api/temperatura-media-fuzzy-geotiff', methods=['GET'])
+def servir_temperatura_media_fuzzy_geotiff():
+    zona  = request.args.get('zona')
+    valor = request.args.get('valor')
+    fecha = request.args.get('fecha')
+    if not zona or not valor or not fecha:
+        return jsonify({'error': 'Faltan parámetros'}), 400
+
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT ruta, nombre_base, fecha_inicial_datos
+        FROM archivos
+        WHERE tipo_archivo = 't2m'
+          AND nombre       LIKE 'fuzzy_t2m_%%'
+          AND fecha_inicial_datos <= %s
+          AND fecha_final_datos   >= %s
+        ORDER BY fecha_final_datos DESC
+        LIMIT 1
+    """, (fecha, fecha))
+    fila = cur.fetchone()
+    cur.close(); conn.close()
+
+    if not fila:
+        return jsonify({'error': f'No hay datos fuzzy de temperatura para {fecha}'}), 404
+
+    ruta_fuzzy_t2m, nombre_base, fecha_ini = fila
+    fecha_pedida  = datetime.datetime.strptime(fecha, "%Y-%m").date().replace(day=1)
+    fecha_inicial = datetime.datetime.strptime(fecha_ini[:7], "%Y-%m").date().replace(day=1)
+    meses_index   = (fecha_pedida.year - fecha_inicial.year) * 12 + (fecha_pedida.month - fecha_inicial.month)
+
+    zona_gdf = obtener_zona_gdf(zona, valor).to_crs(epsg=4326)
+    ruta_tif = generar_geotiff_zona(zona_gdf, ruta_fuzzy_t2m, meses_index, 't2m_media')
+
+    return send_file(ruta_tif, mimetype='image/tiff')
+
+@routes.route('/api/temperatura-alta-fuzzy-geotiff', methods=['GET'])
+def servir_temperatura_alta_fuzzy_geotiff():
+    zona  = request.args.get('zona')
+    valor = request.args.get('valor')
+    fecha = request.args.get('fecha')
+    if not zona or not valor or not fecha:
+        return jsonify({'error': 'Faltan parámetros'}), 400
+
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT ruta, nombre_base, fecha_inicial_datos
+        FROM archivos
+        WHERE tipo_archivo = 't2m'
+          AND nombre       LIKE 'fuzzy_t2m_%%'
+          AND fecha_inicial_datos <= %s
+          AND fecha_final_datos   >= %s
+        ORDER BY fecha_final_datos DESC
+        LIMIT 1
+    """, (fecha, fecha))
+    fila = cur.fetchone()
+    cur.close(); conn.close()
+
+    if not fila:
+        return jsonify({'error': f'No hay datos fuzzy de temperatura para {fecha}'}), 404
+
+    ruta_fuzzy_t2m, nombre_base, fecha_ini = fila
+    fecha_pedida  = datetime.datetime.strptime(fecha, "%Y-%m").date().replace(day=1)
+    fecha_inicial = datetime.datetime.strptime(fecha_ini[:7], "%Y-%m").date().replace(day=1)
+    meses_index   = (fecha_pedida.year - fecha_inicial.year) * 12 + (fecha_pedida.month - fecha_inicial.month)
+
+    zona_gdf = obtener_zona_gdf(zona, valor).to_crs(epsg=4326)
+    ruta_tif = generar_geotiff_zona(zona_gdf, ruta_fuzzy_t2m, meses_index, 't2m_alta')
+
+    return send_file(ruta_tif, mimetype='image/tiff')
+
 @routes.route('/descargas/geotiff/<nombre>')
 def servir_geotiff(nombre):
 
     # Permite descargar directamente un GeoTIFF ya generado.
 
-    ruta = f"uploads/riesgo/geotiff/{nombre}"
+    ruta = f"uploads/riesgo_fuzzy/geotiff/{nombre}"
     if os.path.exists(ruta):
         return send_file(ruta, mimetype='image/tiff', as_attachment=False)
     return jsonify({'error': 'Archivo no encontrado'}), 404
@@ -337,7 +754,7 @@ def geojson_zona():
 def fechas_disponibles():
 
     # Devuelve la lista de meses (YYYY-MM) para los cuales hay archivos
-    # de riesgo disponibles en BD.
+    # de riesgo_fuzzy disponibles en BD.
 
     try:
         conn = get_connection()
@@ -345,7 +762,7 @@ def fechas_disponibles():
         cur.execute("""
             SELECT DISTINCT fecha_inicial_datos, fecha_final_datos
             FROM archivos
-            WHERE tipo_archivo = 'riesgo' AND es_riesgo_final = TRUE
+            WHERE tipo_archivo = 'riesgo_fuzzy' AND es_riesgo_final = TRUE
         """)
         rangos = cur.fetchall()
         cur.close()
@@ -371,10 +788,10 @@ def fechas_disponibles():
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
-@routes.route('/api/promedio-riesgo-zona', methods=['GET'])
-def promedio_riesgo_zona():
+@routes.route('/api/promedio-riesgo-fuzzy-zona', methods=['GET'])
+def promedio_riesgo_fuzzy_zona():
 
-    # Calcula el promedio del índice de riesgo de los últimos 24 meses
+    # Calcula el promedio del índice de riesgo_fuzzy de los últimos 24 meses
     # para la zona seleccionada y devuelve un GeoTIFF.
 
     zona = request.args.get('zona')
@@ -384,13 +801,13 @@ def promedio_riesgo_zona():
         return jsonify({'error': 'Faltan parámetros'}), 400
 
     try:
-        # Obtiene el último archivo de riesgo subido
+        # Obtiene el último archivo de riesgo_fuzzy subido
         conn = get_connection()
         cur = conn.cursor()
         cur.execute("""
             SELECT ruta, fecha_final_datos
             FROM archivos
-            WHERE tipo_archivo = 'riesgo'
+            WHERE tipo_archivo = 'riesgo_fuzzy'
               AND es_riesgo_final = TRUE
             ORDER BY fecha_final_datos DESC
             LIMIT 1
@@ -400,26 +817,83 @@ def promedio_riesgo_zona():
         conn.close()
 
         if not resultado:
-            return jsonify({'error': 'No se encontró archivo de riesgo'}), 404
+            return jsonify({'error': 'No se encontró archivo de riesgo_fuzzy'}), 404
 
         ruta_riesgo, fecha_final = resultado
 
         # Abrir el dataset con decode_times=False por el problema de "months since"
         ds = xr.open_dataset(ruta_riesgo, decode_times=False)
-        riesgo = ds['riesgo_hidrico'] 
+        riesgo_fuzzy = ds['riesgo_fuzzy'] 
 
         # Calcular promedio de los últimos 24 meses
-        riesgo_promedio = riesgo[-24:, :, :].mean(dim='time', keep_attrs=True)
+        riesgo_promedio = riesgo_fuzzy[-24:, :, :].mean(dim='time', keep_attrs=True)
 
         # Crear un nuevo NetCDF temporal para reutilizar la lógica de GeoTIFF
-        temp_ds = xr.Dataset({'riesgo_hidrico': riesgo_promedio.expand_dims(time=[0])})
+        temp_ds = xr.Dataset({'riesgo_fuzzy': riesgo_promedio.expand_dims(time=[0])})
         temp_filename = f"promedio_riesgo_{uuid.uuid4().hex}.nc"
         temp_path = os.path.join(tempfile.gettempdir(), temp_filename)
         temp_ds.to_netcdf(temp_path)
 
         # Obtener geometría y generar TIFF
         zona_gdf = obtener_zona_gdf(zona, valor).to_crs(epsg=4326)
-        ruta_tif = generar_geotiff_riesgo_zona(zona_gdf, temp_path, 0)
+        ruta_tif = generar_geotiff_zona(zona_gdf, temp_path, 0, 'riesgo_fuzzy')
+
+        return send_file(ruta_tif, mimetype='image/tiff')
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@routes.route('/api/promedio-riesgo-raw-zona', methods=['GET'])
+def promedio_riesgo_raw_zona():
+
+    # Calcula el promedio del índice de riesgo_raw de los últimos 24 meses
+    # para la zona seleccionada y devuelve un GeoTIFF.
+
+    zona = request.args.get('zona')
+    valor = request.args.get('valor')
+
+    if not zona or not valor:
+        return jsonify({'error': 'Faltan parámetros'}), 400
+
+    try:
+        # Obtiene el último archivo de riesgo_raw subido
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT ruta, fecha_final_datos
+            FROM archivos
+            WHERE tipo_archivo = 'riesgo_raw'
+              AND es_riesgo_final = TRUE
+            ORDER BY fecha_final_datos DESC
+            LIMIT 1
+        """)
+        resultado = cur.fetchone()
+        cur.close()
+        conn.close()
+
+        if not resultado:
+            return jsonify({'error': 'No se encontró archivo de riesgo_raw'}), 404
+
+        ruta_riesgo, fecha_final = resultado
+
+        # Abrir el dataset con decode_times=False por el problema de "months since"
+        ds = xr.open_dataset(ruta_riesgo, decode_times=False)
+        riesgo_raw = ds['riesgo_raw'] 
+
+        # Calcular promedio de los últimos 24 meses
+        riesgo_promedio = riesgo_raw[-24:, :, :].mean(dim='time', keep_attrs=True)
+
+        # Crear un nuevo NetCDF temporal para reutilizar la lógica de GeoTIFF
+        temp_ds = xr.Dataset({'riesgo_raw': riesgo_promedio.expand_dims(time=[0])})
+        temp_filename = f"promedio_riesgo_{uuid.uuid4().hex}.nc"
+        temp_path = os.path.join(tempfile.gettempdir(), temp_filename)
+        temp_ds.to_netcdf(temp_path)
+
+        # Obtener geometría y generar TIFF
+        zona_gdf = obtener_zona_gdf(zona, valor).to_crs(epsg=4326)
+        ruta_tif = generar_geotiff_zona(zona_gdf, temp_path, 0, 'riesgo_raw')
 
         return send_file(ruta_tif, mimetype='image/tiff')
 

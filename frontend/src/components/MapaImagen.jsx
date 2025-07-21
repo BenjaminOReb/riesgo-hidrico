@@ -1,167 +1,296 @@
-import { useEffect, useRef, useState } from "react";
+// src/components/MapaImagen.jsx
+import React, { useEffect, useState, useRef, useMemo } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import GeoRasterLayer from "georaster-layer-for-leaflet";
 import georaster from "georaster";
 
-/*
- * Componente que renderiza un mapa Leaflet y muestra:
- * - El GeoTIFF de riesgo hídrico (o su promedio de los últimos 2 años).
- * - El contorno de la zona seleccionada (región/provincia/comuna).
- * - Una leyenda de colores.
- */
+const API_BASE = "http://localhost:5000";
 
-function MapaImagen({ zona, valor, fecha }) {
-  // Referencia al objeto mapa de Leaflet, para no volver a inicializarlo en cada render
-  const mapRef = useRef(null); 
-  // Estado que indica si mostrar el promedio de los últimos 2 años en lugar de un mes concreto
-  const [verPromedio, setVerPromedio] = useState(false); 
+// Paleta de 10 colores
+const colorRamp = [
+  "#08306b", "#2171b5", "#6baed6", "#bae4b3", "#ffffcc",
+  "#fed976", "#feb24c", "#fd8d3c", "#fc4e2a", "#bd0026"
+];
 
+export default function MapaImagen({ tipo, zona, valor, fecha }) {
+  const [verPromedio, setVerPromedio] = useState(false);
+
+  // Cada entry en mapRefs.current es { map: LeafletMap, legend: Control }
+  const mapRefs = useRef({});
+
+  // ——— 1) Limpieza cuando cambie el tipo de mapa ———
   useEffect(() => {
-    // Función asíncrona para cargar y dibujar el GeoTIFF en el mapa
-    const loadGeoTIFF = async () => {
-      console.log("🧩 Parámetros recibidos:", zona, valor, fecha);
+    // Al cambiar 'tipo', destruimos TODOS los mapas previos
+    Object.values(mapRefs.current).forEach(({ map, legend }) => {
+      if (legend) map.removeControl(legend);
+      map.remove();
+    });
+    mapRefs.current = {};
+  }, [tipo]);
 
-      try {
-        // Construir la URL según si queremos el promedio o la capa mensual
-        const url = verPromedio
-          ? `http://localhost:5000/api/promedio-riesgo-zona?zona=${zona}&valor=${valor}`
-          : `http://localhost:5000/api/riesgo-geotiff?zona=${zona}&valor=${valor}&fecha=${fecha}`;
+  // ——— 2) Función de color estándar (0–1) ———
+  const pixelValuesToColorFn = val => {
+    if (val == null || isNaN(val)) return null;
+    const idx = Math.floor(val * 10);
+    return colorRamp[Math.min(Math.max(idx, 0), 9)];
+  };
 
-        // Solicitar el GeoTIFF al backend  
-        const response = await fetch(url);
-        if (!response.ok) {
-          throw new Error("No se pudo cargar el archivo GeoTIFF");
-        }
+  // ——— 3) Preparo array de capas según tipo y verPromedio ———
+  const capas = useMemo(() => {
+    const enc = encodeURIComponent;
+    const urls = [];
 
-        // Leer el ArrayBuffer y convertirlo a GeoRaster
-        const arrayBuffer = await response.arrayBuffer();
-        const raster = await georaster(arrayBuffer);
-
-        console.log("📏 pixelWidth:", raster.pixelWidth);
-        console.log("📏 pixelHeight:", raster.pixelHeight);
-        console.log("🧭 projection:", raster.projection);
-
-        // Si el mapa no existe, inicializarlo con configuración base
-        if (!mapRef.current) {
-          mapRef.current = L.map("map", {
-            zoomControl: true,
-            maxZoom: 13,
-            minZoom: 4,
-          }).setView([-30, -70], 5);
-
-          // Capa base de OpenStreetMap
-          L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-            attribution: "© OpenStreetMap contributors",
-          }).addTo(mapRef.current);
+    switch (tipo) {
+      case "riesgo":
+        if (verPromedio) {
+          const avg = `${API_BASE}/api/promedio-riesgo-fuzzy-zona?zona=${zona}&valor=${enc(valor)}`;
+          urls.push({ key: "normal", url: avg });
+          urls.push({ key: "fuzzy",  url: avg });
         } else {
-          // Si ya existe el mapa, eliminar capas anteriores (salvo la base)
-          mapRef.current.eachLayer((layer) => {
-            if (!(layer instanceof L.TileLayer)) {
-              mapRef.current.removeLayer(layer);
-            }
+          urls.push({
+            key: "normal",
+            url: `${API_BASE}/api/riesgo-raw-geotiff?zona=${zona}&valor=${enc(valor)}&fecha=${fecha}`
+          });
+          urls.push({
+            key: "fuzzy",
+            url: `${API_BASE}/api/riesgo-fuzzy-geotiff?zona=${zona}&valor=${enc(valor)}&fecha=${fecha}`
           });
         }
+        break;
 
-        // Crear y añadir la capa raster del GeoTIFF con una función de color (gradiente azul→rojo)
-        const layer = new GeoRasterLayer({
-          georaster: raster,
-          opacity: 0.8,
-          resolution: 256,
-          pixelValuesToColorFn: (val) => {
-            if (val === null || isNaN(val)) return null;
-            if (val < 0.1) return "#08306b";     // azul muy oscuro
-            if (val < 0.2) return "#2171b5";     // azul medio
-            if (val < 0.3) return "#6baed6";     // celeste
-            if (val < 0.4) return "#bae4b3";     // verde muy claro
-            if (val < 0.5) return "#ffffcc";     // amarillo muy claro
-            if (val < 0.6) return "#fed976";     // amarillo
-            if (val < 0.7) return "#feb24c";     // naranja claro
-            if (val < 0.8) return "#fd8d3c";     // naranja
-            if (val < 0.9) return "#fc4e2a";     // rojo claro
-            if (val <= 1.0) return "#bd0026";    // rojo intenso
-            return null;
-          },
+      case "precipitacion":
+        urls.push({
+          key: "normal",
+          url: `${API_BASE}/api/precipitacion-geotiff?zona=${zona}&valor=${enc(valor)}&fecha=${fecha}`
         });
-        layer.addTo(mapRef.current);
+        urls.push({
+          key: "baja",
+          url: `${API_BASE}/api/precipitacion-baja-fuzzy-geotiff?zona=${zona}&valor=${enc(valor)}&fecha=${fecha}`
+        });
+        urls.push({
+          key: "media",
+          url: `${API_BASE}/api/precipitacion-media-fuzzy-geotiff?zona=${zona}&valor=${enc(valor)}&fecha=${fecha}`
+        });
+        urls.push({
+          key: "alta",
+          url: `${API_BASE}/api/precipitacion-alta-fuzzy-geotiff?zona=${zona}&valor=${enc(valor)}&fecha=${fecha}`
+        });
+        break;
 
-        // Construir parámetro de zona para la petición GeoJSON
-        const zonaParam =
-          zona === "comuna"
-            ? `comuna=${valor}`
-            : zona === "provincia"
-            ? `provincia=${valor}`
-            : zona === "region"
-            ? `region=${valor}`
-            : "";
+      case "temperatura":
+        urls.push({
+          key: "normal",
+          url: `${API_BASE}/api/temperatura-geotiff?zona=${zona}&valor=${enc(valor)}&fecha=${fecha}`
+        });
+        urls.push({
+          key: "baja",
+          url: `${API_BASE}/api/temperatura-baja-fuzzy-geotiff?zona=${zona}&valor=${enc(valor)}&fecha=${fecha}`
+        });
+        urls.push({
+          key: "media",
+          url: `${API_BASE}/api/temperatura-media-fuzzy-geotiff?zona=${zona}&valor=${enc(valor)}&fecha=${fecha}`
+        });
+        urls.push({
+          key: "alta",
+          url: `${API_BASE}/api/temperatura-alta-fuzzy-geotiff?zona=${zona}&valor=${enc(valor)}&fecha=${fecha}`
+        });
+        break;
 
-        // Cargar el GeoJSON que define el contorno de la zona
-        const geojsonRes = await fetch(`http://localhost:5000/api/geojson?${zonaParam}`);
-        const geojson = await geojsonRes.json();
+      default:
+        console.error(`Tipo de mapa desconocido: ${tipo}`);
+    }
 
-        // Añadir la capa GeoJSON al mapa (solo contorno, sin relleno)
-        const zonaLayer = L.geoJSON(geojson, {
-          style: {
-            color: "#3f3f40",
-            weight: 0.8,
-            fillOpacity: 0,
-          },
-        }).addTo(mapRef.current);
+    return urls;
+  }, [tipo, zona, valor, fecha, verPromedio]);
 
-        // Ajustar el zoom para encuadrar la zona seleccionada
-        const bounds = zonaLayer.getBounds();
-        if (bounds.isValid()) {
-          mapRef.current.fitBounds(bounds, {
-            padding: [20, 20],
-            maxZoom: 10,
-            animate: true,
-          });
-        }
+  // ——— 4) Mapas de etiqueta por key ———
+  const labelMap = useMemo(() => {
+    if (tipo === "riesgo") {
+      return { normal: "Riesgo crudo", fuzzy: "Riesgo fuzzy" };
+    }
+    if (tipo === "precipitacion") {
+      return {
+        normal: "Precipitación (mm)",
+        baja:   "GP a Prec. Baja",
+        media:  "GP a Prec. Media",
+        alta:   "GP a Prec. Alta"
+      };
+    }
+    if (tipo === "temperatura") {
+      return {
+        normal: "Temperatura (°C)",
+        baja:   "GP a Temp. Baja",
+        media:  "GP a Temp. Media",
+        alta:   "GP a Temp. Alta"
+      };
+    }
+    return {};
+  }, [tipo]);
 
-      } catch (error) {
-        console.error("❌ Error al cargar el mapa o la zona:", error);
+  // ——— 5) Efecto para inicializar o actualizar cada capa ———
+  useEffect(() => {
+    if (!capas.length) return;
+
+    const initMapa = async ({ key, url }) => {
+      // fetch + parse
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`No se pudo cargar ${url}`);
+      const buf = await res.arrayBuffer();
+      const raster = await georaster(buf);
+
+      // elegir colorFn
+      let colorFn = pixelValuesToColorFn;
+      if (key === "normal" && tipo !== "riesgo") {
+        // escala de min/max
+        const min = raster.mins[0], max = raster.maxs[0];
+        colorFn = v => {
+          if (v == null || isNaN(v)) return null;
+          const t = (v - min) / (max - min),
+                idx = Math.floor(t * 10);
+          return colorRamp[Math.min(Math.max(idx, 0), 9)];
+        };
       }
+
+      // init o limpiar mapa + leyenda
+      let entry = mapRefs.current[key];
+      if (!entry) {
+        const map = L.map(`map-${key}`, { zoomControl: true, maxZoom: 13, minZoom: 4 })
+                     .setView([-30, -70], 5);
+        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+          attribution: "© OpenStreetMap contributors"
+        }).addTo(map);
+        entry = mapRefs.current[key] = { map, legend: null };
+      } else {
+        entry.map.eachLayer(l => {
+          if (!(l instanceof L.TileLayer)) entry.map.removeLayer(l);
+        });
+      }
+
+      // capa raster
+      new GeoRasterLayer({
+        georaster:            raster,
+        opacity:              0.8,
+        resolution:           256,
+        pixelValuesToColorFn: colorFn
+      }).addTo(entry.map);
+
+      // contorno
+      const zonaParam =
+        zona === "comuna"
+          ? `comuna=${encodeURIComponent(valor)}`
+          : zona === "provincia"
+          ? `provincia=${encodeURIComponent(valor)}`
+          : `region=${encodeURIComponent(valor)}`;
+      const gj = await fetch(`${API_BASE}/api/geojson?${zonaParam}`).then(r => r.json());
+      const zoneLayer = L.geoJSON(gj, {
+        style: { color: "#3f3f40", weight: 0.8, fillOpacity: 0 }
+      }).addTo(entry.map);
+      if (zoneLayer.getBounds().isValid()) {
+        entry.map.fitBounds(zoneLayer.getBounds(), { padding:[20,20], maxZoom:10 });
+      }
+
+      // limpiar leyenda anterior
+      if (entry.legend) {
+        entry.map.removeControl(entry.legend);
+        entry.legend = null;
+      }
+
+      // nueva leyenda incrustada
+      const legend = L.control({ position: "bottomright" });
+      legend.onAdd = () => {
+        const div = L.DomUtil.create("div", "info legend");
+        Object.assign(div.style, {
+          background:   "rgba(255,255,255,0.8)",
+          padding:      "6px",
+          borderRadius: "4px",
+          boxShadow:    "0 0 15px rgba(0,0,0,0.2)",
+          lineHeight:   "1.2em",
+          fontSize:     "0.9em"
+        });
+        div.innerHTML = `<strong style="display:block; text-align:center; margin-bottom:4px;">
+                           ${labelMap[key]}
+                         </strong>`;
+
+        if (key === "normal" && tipo === "precipitacion") {
+          const min = raster.mins[0], max = raster.maxs[0], step = (max-min)/10;
+          for (let i=0; i<10; i++) {
+            const f = (min+step*i).toFixed(1),
+                  t = (min+step*(i+1)).toFixed(1);
+            div.innerHTML +=
+              `<i style="
+                 background:${colorRamp[i]};
+                 width:18px;height:8px;
+                 display:inline-block;
+                 margin-right:4px;
+               "></i>${f}–${t} mm<br>`;
+          }
+        }
+        else if (key === "normal" && tipo === "temperatura") {
+          const min = raster.mins[0], max = raster.maxs[0], step = (max-min)/10;
+          for (let i=0; i<10; i++) {
+            const f = (min+step*i).toFixed(1),
+                  t = (min+step*(i+1)).toFixed(1);
+            div.innerHTML +=
+              `<i style="
+                 background:${colorRamp[i]};
+                 width:18px;height:8px;
+                 display:inline-block;
+                 margin-right:4px;
+               "></i>${f}–${t} °C<br>`;
+          }
+        }
+        else {
+          for (let i=0; i<10; i++) {
+            const f = (i/10).toFixed(1),
+                  t = ((i+1)/10).toFixed(1);
+            div.innerHTML +=
+              `<i style="
+                 background:${colorRamp[i]};
+                 width:18px;height:8px;
+                 display:inline-block;
+                 margin-right:4px;
+               "></i>${f}–${t}<br>`;
+          }
+        }
+        return div;
+      };
+      legend.addTo(entry.map);
+      entry.legend = legend;
     };
 
-    // Ejecutar la carga sólo si tenemos zona/valor y (fecha o promedio)
-    if (zona && valor && (fecha || verPromedio)) {
-      loadGeoTIFF();
-    }
-  }, [zona, valor, fecha, verPromedio]);
+    capas.forEach(c =>
+      initMapa(c).catch(err => console.error(`Error capa ${c.key}:`, err))
+    );
+  }, [capas, tipo, zona, valor]);
 
   return (
-    <div style={{ position: "relative" }}>
-      <div style={{ marginBottom: "10px" }}>
-        <label>
-          <input
-            type="checkbox"
-            checked={verPromedio}
-            onChange={() => setVerPromedio(!verPromedio)}
+    <div>
+      {tipo === "riesgo" && (
+        <div style={{ marginBottom: 10 }}>
+          <label>
+            <input
+              type="checkbox"
+              checked={verPromedio}
+              onChange={() => setVerPromedio(v => !v)}
+            />{" "}
+            Ver promedio últimos 2 años
+          </label>
+        </div>
+      )}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "1rem" }}>
+        {capas.map(({ key }) => (
+          <div
+            key={key}
+            id={`map-${key}`}
+            style={{
+              flex: tipo === "riesgo" ? 1 : "1 1 calc(50% - .5rem)",
+              height: "400px",
+              border: "1px solid #ddd"
+            }}
           />
-          Ver promedio últimos 2 años
-        </label>
-      </div>
-
-      <div
-        id="map"
-        style={{ height: "600px", width: "100%", marginTop: "1rem" }}
-      ></div>
-
-      <div className="leyenda-mapa">
-        <h4>Riesgo Hídrico</h4>
-        <div><span style={{ background: "#08306b" }}></span> 0.0 – 0.1</div>
-        <div><span style={{ background: "#2171b5" }}></span> 0.1 – 0.2</div>
-        <div><span style={{ background: "#6baed6" }}></span> 0.2 – 0.3</div>
-        <div><span style={{ background: "#bae4b3" }}></span> 0.3 – 0.4</div>
-        <div><span style={{ background: "#ffffcc" }}></span> 0.4 – 0.5</div>
-        <div><span style={{ background: "#fed976" }}></span> 0.5 – 0.6</div>
-        <div><span style={{ background: "#feb24c" }}></span> 0.6 – 0.7</div>
-        <div><span style={{ background: "#fd8d3c" }}></span> 0.7 – 0.8</div>
-        <div><span style={{ background: "#fc4e2a" }}></span> 0.8 – 0.9</div>
-        <div><span style={{ background: "#bd0026" }}></span> 0.9 – 1.0</div>
+        ))}
       </div>
     </div>
   );
 }
-
-export default MapaImagen;
