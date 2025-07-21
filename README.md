@@ -117,8 +117,8 @@ frontend/
 | `/upload`                               | POST   | Subir 1 NetCDF (recorta, fuzzy, riesgo).                         |
 | `/api/ubicaciones`                      | GET    | Devuelve jerarquía Región→Provincia→Comuna                       |
 | `/api/lista-zonas?zona=<tipo>`          | GET    | Listado de nombres según `zona=region|provincia|comuna`          |
-| `/api/riesgo-fuzzy-zona`                | GET    | Filtra índice de riesgo fuzzy por zona`                          |
-| `/api/riesgo-raw-zona`                  | GET    | Filtra índice de riesgo crudo por zona`                          |
+| `/api/riesgo-fuzzy-zona`                | GET    | Filtra índice de riesgo fuzzy por zona                           |
+| `/api/riesgo-raw-zona`                  | GET    | Filtra índice de riesgo crudo por zona                           |
 | `/api/riesgo-fuzzy-geotiff`             | GET    | GeoTIFF de riesgo fuzzy por zona                                 |
 | `/api/riesgo-raw-geotiff`               | GET    | GeoTIFF de riesgo crudo por zona                                 |
 | `/api/precipitacion-geotiff`            | GET    | GeoTIFF de precipitación por zona                                |
@@ -132,8 +132,8 @@ frontend/
 | `/descargas/geotiff/<nombre>`           | GET    | Servir GeoTIFF almacenado en `/uploads/riesgo/geotiff/`          |
 | `/api/geojson`                          | GET    | GeoJSON de la zona indicada                                      |
 | `/api/fechas-disponibles`               | GET    | Lista de meses y años disponibles                                |
-| `/api/promedio-riesgo-fuzzy-zona`       | GET    | Geotiff promedio de riesgo fuzzy de los ultimos 24               |
-| `/api/promedio-riesgo-raw-zona`         | GET    | Geotiff promedio de riesgo raw de los ultimos 24                 |
+| `/api/promedio-riesgo-fuzzy-zona`       | GET    | GeoTIFF promedio de riesgo fuzzy de los ultimos 24               |
+| `/api/promedio-riesgo-raw-zona`         | GET    | GeoTIFF promedio de riesgo raw de los ultimos 24                 |
 
  ---
 
