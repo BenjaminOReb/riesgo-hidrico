@@ -1,4 +1,3 @@
-// frontend/src/App.jsx
 import { useState } from 'react';
 import FileUpload from './components/FileUpload';
 import ZonaSelector from './components/ZonaSelector';

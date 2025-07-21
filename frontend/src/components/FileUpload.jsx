@@ -40,7 +40,7 @@ function FileUpload({ onUploadSuccess }) {
     }
 
     if (allOk) {
-      setStatus(prev => prev + `\n🎉 Ambos archivos fueron procesados con éxito.`);
+      setStatus(prev => prev + `\n Ambos archivos fueron procesados con éxito.`);
       // Disparamos la recarga de fechas en App.jsx
       onUploadSuccess();
     }

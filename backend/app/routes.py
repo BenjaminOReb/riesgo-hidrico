@@ -324,9 +324,9 @@ def riesgo_raw_por_zona():
 @routes.route('/api/riesgo-fuzzy-geotiff', methods=['GET'])
 def servir_riesgo_fuzzy_geotiff():
 
-    #Devuelve un GeoTIFF recortado al área de la zona y al mes solicitado.
-    #Busca en BD el NetCDF que cubra la fecha, calcula el índice de tiempo
-    #y genera el TIFF.
+    # Devuelve un GeoTIFF recortado al área de la zona y al mes solicitado.
+    # Busca en BD el NetCDF que cubra la fecha, calcula el índice de tiempo
+    # y genera el TIFF.
 
     zona = request.args.get('zona')
     valor = request.args.get('valor')
@@ -385,6 +385,11 @@ def servir_riesgo_fuzzy_geotiff():
 
 @routes.route('/api/riesgo-raw-geotiff', methods=['GET'])
 def servir_riesgo_raw_geotiff():
+
+    # Devuelve un GeoTIFF recortado al área de la zona y al mes solicitado.
+    # Busca en BD el NetCDF que cubra la fecha, calcula el índice de tiempo
+    # y genera el TIFF.
+
     zona  = request.args.get('zona')
     valor = request.args.get('valor')
     fecha = request.args.get('fecha')  # "YYYY-MM"
@@ -426,12 +431,16 @@ def servir_riesgo_raw_geotiff():
 
 @routes.route('/api/precipitacion-geotiff', methods=['GET'])
 def servir_precipitacion_geotiff():
+
+    # 1) Leer parámetros de consulta
     zona  = request.args.get('zona')
     valor = request.args.get('valor')
-    fecha = request.args.get('fecha')
+    fecha = request.args.get('fecha')  # formato "YYYY-MM"
     if not zona or not valor or not fecha:
+        # Si falta alguno, devolvemos error 400
         return jsonify({'error': 'Faltan parámetros'}), 400
 
+    # 2) Buscar en la BD el NetCDF de precipitación que cubra la fecha
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("""
@@ -447,98 +456,140 @@ def servir_precipitacion_geotiff():
     cur.close(); conn.close()
 
     if not fila:
+        # No existe archivo para ese mes
         return jsonify({'error': f'No hay datos de precipitación para {fecha}'}), 404
-
+    
+    # 3) Desempaquetar ruta y fechas
     ruta_pr, nombre_base, fecha_ini = fila
+
+    # 4) Calcular índice temporal dentro del NetCDF:cuántos meses hay entre fecha_ini y fecha_pedida
     fecha_pedida  = datetime.datetime.strptime(fecha, "%Y-%m").date().replace(day=1)
     fecha_inicial = datetime.datetime.strptime(fecha_ini[:7], "%Y-%m").date().replace(day=1)
     meses_index   = (fecha_pedida.year - fecha_inicial.year) * 12 + (fecha_pedida.month - fecha_inicial.month)
 
+    # 5) Obtener geometría de la zona y generar GeoTIFF recortado
     zona_gdf = obtener_zona_gdf(zona, valor).to_crs(epsg=4326)
-    ruta_tif = generar_geotiff_zona(zona_gdf, ruta_pr, meses_index, 'pr')
+    ruta_tif = generar_geotiff_zona(zona_gdf, ruta_pr, meses_index, 'pr') # nombre de la variable en el NetCDF
 
+    # 6) Devolver el archivo GeoTIFF como respuesta
     return send_file(ruta_tif, mimetype='image/tiff')
 
 @routes.route('/api/precipitacion-baja-fuzzy-geotiff', methods=['GET'])
 def servir_precipitacion_baja_fuzzy_geotiff():
+    # 1) Leer parámetros de consulta
     zona  = request.args.get('zona')
     valor = request.args.get('valor')
     fecha = request.args.get('fecha')
     if not zona or not valor or not fecha:
         return jsonify({'error': 'Faltan parámetros'}), 400
 
+    # 2) Buscar en BD el NetCDF fuzzy de precipitación (capas _baja/_media/_alta)
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("""
         SELECT ruta, nombre_base, fecha_inicial_datos
         FROM archivos
-        WHERE tipo_archivo = 'pr'
-          AND nombre       LIKE 'fuzzy_pr_%%'
+        WHERE tipo_archivo = 'pr'                          -- buscamos archivos fuzzy de pr
+          AND nombre       LIKE 'fuzzy_pr_%%'               -- prefijo fuzzy_pr_
           AND fecha_inicial_datos <= %s
           AND fecha_final_datos   >= %s
         ORDER BY fecha_final_datos DESC
         LIMIT 1
     """, (fecha, fecha))
     fila = cur.fetchone()
-    cur.close(); conn.close()
+    cur.close()
+    conn.close()
 
     if not fila:
         return jsonify({'error': f'No hay datos fuzzy de precipitación para {fecha}'}), 404
 
+    # 3) Desempaquetar resultados
     ruta_fuzzy_pr, nombre_base, fecha_ini = fila
+
+    # 4) Calcular índice temporal
     fecha_pedida  = datetime.datetime.strptime(fecha, "%Y-%m").date().replace(day=1)
     fecha_inicial = datetime.datetime.strptime(fecha_ini[:7], "%Y-%m").date().replace(day=1)
-    meses_index   = (fecha_pedida.year - fecha_inicial.year) * 12 + (fecha_pedida.month - fecha_inicial.month)
+    meses_index   = (
+        (fecha_pedida.year  - fecha_inicial.year) * 12 +
+        (fecha_pedida.month - fecha_inicial.month)
+    )
 
+    # 5) Generar GeoTIFF de la capa “_baja” recortado a la zona
     zona_gdf = obtener_zona_gdf(zona, valor).to_crs(epsg=4326)
-    ruta_tif = generar_geotiff_zona(zona_gdf, ruta_fuzzy_pr, meses_index, 'pr_baja')
+    ruta_tif = generar_geotiff_zona(
+        zona_gdf,
+        ruta_fuzzy_pr,
+        meses_index,
+        'pr_baja'  # nombre de la variable de grado de pertenencia baja
+    )
 
+    # 6) Enviar el TIFF al cliente
     return send_file(ruta_tif, mimetype='image/tiff')
 
 @routes.route('/api/precipitacion-media-fuzzy-geotiff', methods=['GET'])
 def servir_precipitacion_media_fuzzy_geotiff():
+    # 1) Leer parámetros de la query string
     zona  = request.args.get('zona')
     valor = request.args.get('valor')
-    fecha = request.args.get('fecha')
+    fecha = request.args.get('fecha')  # formato "YYYY-MM"
     if not zona or not valor or not fecha:
+        # Falta alguno de los parámetros obligatorios
         return jsonify({'error': 'Faltan parámetros'}), 400
 
+    # 2) Consultar en la BD el NetCDF fuzzy de precipitación (cualquiera de pr_baja/pr_media/pr_alta)
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("""
         SELECT ruta, nombre_base, fecha_inicial_datos
         FROM archivos
         WHERE tipo_archivo = 'pr'
-          AND nombre       LIKE 'fuzzy_pr_%%'
-          AND fecha_inicial_datos <= %s
+          AND nombre       LIKE 'fuzzy_pr_%%'     -- archivos generados por generar_capas_fuzzy
+          AND fecha_inicial_datos <= %s           -- que incluyan la fecha solicitada
           AND fecha_final_datos   >= %s
-        ORDER BY fecha_final_datos DESC
+        ORDER BY fecha_final_datos DESC           -- tomar el más reciente
         LIMIT 1
     """, (fecha, fecha))
     fila = cur.fetchone()
-    cur.close(); conn.close()
+    cur.close()
+    conn.close()
 
     if not fila:
+        # No hay ningún NetCDF fuzzy para esa fecha
         return jsonify({'error': f'No hay datos fuzzy de precipitación para {fecha}'}), 404
 
+    # 3) Extraer ruta y rangos de fecha desde la fila
     ruta_fuzzy_pr, nombre_base, fecha_ini = fila
+
+    # 4) Calcular el índice de tiempo: diferencia en meses entre fecha_ini y la solicitada
     fecha_pedida  = datetime.datetime.strptime(fecha, "%Y-%m").date().replace(day=1)
     fecha_inicial = datetime.datetime.strptime(fecha_ini[:7], "%Y-%m").date().replace(day=1)
-    meses_index   = (fecha_pedida.year - fecha_inicial.year) * 12 + (fecha_pedida.month - fecha_inicial.month)
+    meses_index   = (
+        (fecha_pedida.year  - fecha_inicial.year) * 12 +
+        (fecha_pedida.month - fecha_inicial.month)
+    )
 
+    # 5) Cargar la geometría de la zona y generar el GeoTIFF de la capa "pr_media"
     zona_gdf = obtener_zona_gdf(zona, valor).to_crs(epsg=4326)
-    ruta_tif = generar_geotiff_zona(zona_gdf, ruta_fuzzy_pr, meses_index, 'pr_media')
+    ruta_tif = generar_geotiff_zona(
+        zona_gdf,
+        ruta_fuzzy_pr,
+        meses_index,
+        'pr_media'  # variable de salida dentro del NetCDF
+    )
 
+    # 6) Enviar el GeoTIFF resultante
     return send_file(ruta_tif, mimetype='image/tiff')
 
 @routes.route('/api/precipitacion-alta-fuzzy-geotiff', methods=['GET'])
 def servir_precipitacion_alta_fuzzy_geotiff():
+    # 1) Leer parámetros de la query string
     zona  = request.args.get('zona')
     valor = request.args.get('valor')
     fecha = request.args.get('fecha')
     if not zona or not valor or not fecha:
         return jsonify({'error': 'Faltan parámetros'}), 400
 
+    # 2) Consultar en la BD el NetCDF fuzzy de precipitación
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("""
@@ -552,29 +603,48 @@ def servir_precipitacion_alta_fuzzy_geotiff():
         LIMIT 1
     """, (fecha, fecha))
     fila = cur.fetchone()
-    cur.close(); conn.close()
+    cur.close()
+    conn.close()
 
     if not fila:
         return jsonify({'error': f'No hay datos fuzzy de precipitación para {fecha}'}), 404
 
+    # 3) Desempaquetar ruta y fecha inicial del NetCDF
     ruta_fuzzy_pr, nombre_base, fecha_ini = fila
+
+    # 4) Calcular índice temporal dentro del NetCDF
     fecha_pedida  = datetime.datetime.strptime(fecha, "%Y-%m").date().replace(day=1)
     fecha_inicial = datetime.datetime.strptime(fecha_ini[:7], "%Y-%m").date().replace(day=1)
-    meses_index   = (fecha_pedida.year - fecha_inicial.year) * 12 + (fecha_pedida.month - fecha_inicial.month)
+    meses_index   = (
+        (fecha_pedida.year  - fecha_inicial.year) * 12 +
+        (fecha_pedida.month - fecha_inicial.month)
+    )
 
+    # 5) Generar GeoTIFF de la capa "pr_alta" recortado a la zona
     zona_gdf = obtener_zona_gdf(zona, valor).to_crs(epsg=4326)
-    ruta_tif = generar_geotiff_zona(zona_gdf, ruta_fuzzy_pr, meses_index, 'pr_alta')
+    ruta_tif = generar_geotiff_zona(
+        zona_gdf,
+        ruta_fuzzy_pr,
+        meses_index,
+        'pr_alta'  # variable de grado de pertenencia alta
+    )
 
+    # 6) Retornar el GeoTIFF
     return send_file(ruta_tif, mimetype='image/tiff')
 
 @routes.route('/api/temperatura-geotiff', methods=['GET'])
 def servir_temperatura_geotiff():
+    # 1) Leer parámetros de la query string: zona (comuna/provincia/región), valor (nombre)
+    #    y fecha en formato "YYYY-MM".
     zona  = request.args.get('zona')
     valor = request.args.get('valor')
     fecha = request.args.get('fecha')
     if not zona or not valor or not fecha:
+        # Si falta alguno, devolvemos error 400 Bad Request.
         return jsonify({'error': 'Faltan parámetros'}), 400
 
+    # 2) Conectar a la base de datos y buscar el NetCDF de temperatura (t2m)
+    #    que cubra la fecha solicitada.
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("""
@@ -587,29 +657,51 @@ def servir_temperatura_geotiff():
         LIMIT 1
     """, (fecha, fecha))
     fila = cur.fetchone()
-    cur.close(); conn.close()
+    cur.close()
+    conn.close()
 
     if not fila:
+        # Si no hay un archivo t2m que abarque esa fecha, devolvemos 404.
         return jsonify({'error': f'No hay datos de temperatura para {fecha}'}), 404
 
+    # 3) Extraer la ruta del NetCDF, el nombre_base y la fecha inicial de datos
     ruta_t2m, nombre_base, fecha_ini = fila
+
+    # 4) Calcular el índice de tiempo dentro del NetCDF:
+    #    cuántos meses han pasado desde fecha_ini hasta fecha solicitada.
     fecha_pedida  = datetime.datetime.strptime(fecha, "%Y-%m").date().replace(day=1)
     fecha_inicial = datetime.datetime.strptime(fecha_ini[:7], "%Y-%m").date().replace(day=1)
-    meses_index   = (fecha_pedida.year - fecha_inicial.year) * 12 + (fecha_pedida.month - fecha_inicial.month)
+    meses_index   = (
+        (fecha_pedida.year  - fecha_inicial.year) * 12 +
+        (fecha_pedida.month - fecha_inicial.month)
+    )
 
+    # 5) Obtener el GeoDataFrame de la zona y reproyectarlo a WGS84 (EPSG:4326).
     zona_gdf = obtener_zona_gdf(zona, valor).to_crs(epsg=4326)
-    ruta_tif = generar_geotiff_zona(zona_gdf, ruta_t2m, meses_index, 't2m')
 
+    #    Generar el GeoTIFF recortado a la zona y al time‐step calculado,
+    #    extrayendo la variable "t2m" del NetCDF.
+    ruta_tif = generar_geotiff_zona(
+        zona_gdf,
+        ruta_t2m,
+        meses_index,
+        't2m'  # nombre de la variable a extraer del NetCDF
+    )
+
+    # 6) Devolver el GeoTIFF resultante con el MIME type apropiado.
     return send_file(ruta_tif, mimetype='image/tiff')
 
 @routes.route('/api/temperatura-baja-fuzzy-geotiff', methods=['GET'])
 def servir_temperatura_baja_fuzzy_geotiff():
+    # 1) Leer parámetros de la query: zona (comuna/provincia/región), valor y fecha "YYYY-MM"
     zona  = request.args.get('zona')
     valor = request.args.get('valor')
     fecha = request.args.get('fecha')
     if not zona or not valor or not fecha:
+        # Si falta alguno, devolvemos 400 Bad Request
         return jsonify({'error': 'Faltan parámetros'}), 400
 
+    # 2) Buscar en la base de datos el archivo fuzzy de temperatura (t2m_baja) que cubra ese mes
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("""
@@ -623,29 +715,49 @@ def servir_temperatura_baja_fuzzy_geotiff():
         LIMIT 1
     """, (fecha, fecha))
     fila = cur.fetchone()
-    cur.close(); conn.close()
+    cur.close()
+    conn.close()
 
     if not fila:
+        # Si no existe, devolvemos 404 Not Found
         return jsonify({'error': f'No hay datos fuzzy de temperatura para {fecha}'}), 404
 
+    # 3) Desempaquetar ruta al NetCDF fuzzy, nombre_base y fecha inicial
     ruta_fuzzy_t2m, nombre_base, fecha_ini = fila
+
+    # 4) Calcular el índice de tiempo (mes) dentro del NetCDF
     fecha_pedida  = datetime.datetime.strptime(fecha, "%Y-%m").date().replace(day=1)
     fecha_inicial = datetime.datetime.strptime(fecha_ini[:7], "%Y-%m").date().replace(day=1)
-    meses_index   = (fecha_pedida.year - fecha_inicial.year) * 12 + (fecha_pedida.month - fecha_inicial.month)
+    meses_index   = (
+        (fecha_pedida.year  - fecha_inicial.year) * 12 +
+        (fecha_pedida.month - fecha_inicial.month)
+    )
 
+    # 5) Obtener la geometría de la zona y asegurar CRS WGS84
     zona_gdf = obtener_zona_gdf(zona, valor).to_crs(epsg=4326)
-    ruta_tif = generar_geotiff_zona(zona_gdf, ruta_fuzzy_t2m, meses_index, 't2m_baja')
 
+    # 6) Generar el GeoTIFF recortado usando la variable 't2m_baja' en el índice calculado
+    ruta_tif = generar_geotiff_zona(
+        zona_gdf,
+        ruta_fuzzy_t2m,
+        meses_index,
+        't2m_baja'  # nombre de la banda fuzzy baja de temperatura
+    )
+
+    # 7) Devolver el archivo GeoTIFF al cliente
     return send_file(ruta_tif, mimetype='image/tiff')
 
 @routes.route('/api/temperatura-media-fuzzy-geotiff', methods=['GET'])
 def servir_temperatura_media_fuzzy_geotiff():
+    # 1) Leer parámetros de la petición
     zona  = request.args.get('zona')
     valor = request.args.get('valor')
     fecha = request.args.get('fecha')
     if not zona or not valor or not fecha:
+        # Parámetros obligatorios faltantes → 400 Bad Request
         return jsonify({'error': 'Faltan parámetros'}), 400
 
+    # 2) Consultar en BD el NetCDF fuzzy de temperatura que cubre la fecha
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("""
@@ -659,29 +771,48 @@ def servir_temperatura_media_fuzzy_geotiff():
         LIMIT 1
     """, (fecha, fecha))
     fila = cur.fetchone()
-    cur.close(); conn.close()
+    cur.close()
+    conn.close()
 
     if not fila:
+        # Si no hay resultado → 404 Not Found
         return jsonify({'error': f'No hay datos fuzzy de temperatura para {fecha}'}), 404
 
+    # 3) Desempaquetar resultados: ruta al archivo, nombre_base, fecha inicial
     ruta_fuzzy_t2m, nombre_base, fecha_ini = fila
+
+    # 4) Calcular índice temporal (0–59) dentro del NetCDF
     fecha_pedida  = datetime.datetime.strptime(fecha, "%Y-%m").date().replace(day=1)
     fecha_inicial = datetime.datetime.strptime(fecha_ini[:7], "%Y-%m").date().replace(day=1)
-    meses_index   = (fecha_pedida.year - fecha_inicial.year) * 12 + (fecha_pedida.month - fecha_inicial.month)
+    meses_index   = (
+        (fecha_pedida.year  - fecha_inicial.year) * 12 +
+        (fecha_pedida.month - fecha_inicial.month)
+    )
 
+    # 5) Obtener geometría de la zona y asegurar CRS EPSG:4326
     zona_gdf = obtener_zona_gdf(zona, valor).to_crs(epsg=4326)
-    ruta_tif = generar_geotiff_zona(zona_gdf, ruta_fuzzy_t2m, meses_index, 't2m_media')
 
+    # 6) Generar GeoTIFF recortado usando la variable 't2m_media'
+    ruta_tif = generar_geotiff_zona(
+        zona_gdf,
+        ruta_fuzzy_t2m,
+        meses_index,
+        't2m_media'  # grado de pertenencia media
+    )
+
+    # 7) Enviar el GeoTIFF resultante al cliente
     return send_file(ruta_tif, mimetype='image/tiff')
 
 @routes.route('/api/temperatura-alta-fuzzy-geotiff', methods=['GET'])
 def servir_temperatura_alta_fuzzy_geotiff():
+    # 1) Leer parámetros de la petición
     zona  = request.args.get('zona')
     valor = request.args.get('valor')
     fecha = request.args.get('fecha')
     if not zona or not valor or not fecha:
         return jsonify({'error': 'Faltan parámetros'}), 400
 
+    # 2) Consultar en BD el NetCDF fuzzy de temperatura que cubre la fecha
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("""
@@ -695,26 +826,42 @@ def servir_temperatura_alta_fuzzy_geotiff():
         LIMIT 1
     """, (fecha, fecha))
     fila = cur.fetchone()
-    cur.close(); conn.close()
+    cur.close()
+    conn.close()
 
     if not fila:
+        # Sin datos disponibles → 404
         return jsonify({'error': f'No hay datos fuzzy de temperatura para {fecha}'}), 404
 
+    # 3) Desempaquetar ruta, nombre_base y fecha inicial
     ruta_fuzzy_t2m, nombre_base, fecha_ini = fila
+
+    # 4) Calcular índice de tiempo dentro del NetCDF
     fecha_pedida  = datetime.datetime.strptime(fecha, "%Y-%m").date().replace(day=1)
     fecha_inicial = datetime.datetime.strptime(fecha_ini[:7], "%Y-%m").date().replace(day=1)
-    meses_index   = (fecha_pedida.year - fecha_inicial.year) * 12 + (fecha_pedida.month - fecha_inicial.month)
+    meses_index   = (
+        (fecha_pedida.year  - fecha_inicial.year) * 12 +
+        (fecha_pedida.month - fecha_inicial.month)
+    )
 
+    # 5) Obtener y reproyectar geometría de la zona
     zona_gdf = obtener_zona_gdf(zona, valor).to_crs(epsg=4326)
-    ruta_tif = generar_geotiff_zona(zona_gdf, ruta_fuzzy_t2m, meses_index, 't2m_alta')
 
+    # 6) Generar GeoTIFF recortado con la variable 't2m_alta'
+    ruta_tif = generar_geotiff_zona(
+        zona_gdf,
+        ruta_fuzzy_t2m,
+        meses_index,
+        't2m_alta'  # grado de pertenencia alta
+    )
+
+    # 7) Devolver el GeoTIFF generado
     return send_file(ruta_tif, mimetype='image/tiff')
 
 @routes.route('/descargas/geotiff/<nombre>')
 def servir_geotiff(nombre):
 
     # Permite descargar directamente un GeoTIFF ya generado.
-
     ruta = f"uploads/riesgo_fuzzy/geotiff/{nombre}"
     if os.path.exists(ruta):
         return send_file(ruta, mimetype='image/tiff', as_attachment=False)

@@ -33,7 +33,7 @@ function FechaSelector({ onSeleccionar, reloadFlag }) {
 
   return (
     <div style={{ marginTop: '20px' }}>
-      <label htmlFor="fecha">📅 Selecciona una fecha (año-mes): </label>
+      <label htmlFor="fecha"> Selecciona una fecha (año-mes): </label>
       <select id="fecha" value={fecha} onChange={manejarCambio}>
         <option value="" disabled>-- elige fecha --</option>
         {fechasDisponibles.map((f) => (

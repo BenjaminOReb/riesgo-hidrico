@@ -14,9 +14,9 @@ from affine import Affine
 
 
 def limpiar_atributos_conflictivos(ds):
-    """
-    Elimina atributos y codificaciones conflictivos al escribir NetCDF.
-    """
+    
+    # Elimina atributos y codificaciones conflictivos al escribir NetCDF.
+    
     for v in ds.variables:
         if '_FillValue' in ds[v].encoding:
             del ds[v].encoding['_FillValue']
@@ -26,9 +26,9 @@ def limpiar_atributos_conflictivos(ds):
 
 
 def generar_nombre_base(ds):
-    """
-    Genera un nombre base 'YYYY-MM' a partir del último step temporal.
-    """
+    
+    # Genera un nombre base 'YYYY-MM' a partir del último step temporal.
+    
     try:
         ultimo = ds.sizes['time'] - 1
         valor  = ds['time'].values[ultimo]
@@ -40,10 +40,10 @@ def generar_nombre_base(ds):
 
 
 def recortar_ultimos_5_anos(ruta_archivo, carpeta_salida="uploads/recortado"):
-    """
-    Abre un NetCDF y guarda los últimos 60 pasos temporales en un nuevo archivo.
-    Retorna la ruta al .nc recortado.
-    """
+    
+    # Abre un NetCDF y guarda los últimos 60 pasos temporales en un nuevo archivo.
+    # Retorna la ruta al .nc recortado.
+    
     os.makedirs(carpeta_salida, exist_ok=True)
     ds = xr.open_dataset(ruta_archivo, decode_times=False)
     if 'time' not in ds.dims or ds.sizes['time'] < 60:
@@ -59,10 +59,10 @@ def recortar_ultimos_5_anos(ruta_archivo, carpeta_salida="uploads/recortado"):
 
 
 def generar_capas_fuzzy(ruta_archivo, carpeta_salida="uploads/fuzzy"):
-    """
-    Genera un NetCDF con capas fuzzy (baja, media, alta) para pr o t2m,
-    calculando trapmf por región.
-    """
+    
+    # Genera un NetCDF con capas fuzzy (baja, media, alta) para pr o t2m,
+    # calculando trapmf por región.
+    
     os.makedirs(carpeta_salida, exist_ok=True)
     ds = xr.open_dataset(ruta_archivo, decode_times=False)
     if 'pr' in ds.data_vars:
@@ -215,9 +215,9 @@ def calcular_fecha_desde_indice(nombre_base, indice):
 
 
 def filtrar_riesgo_por_zona(zona_gdf, ruta_riesgo):
-    """
-    Para cada time step en riesgo_fuzzy, aplica máscara de zona y extrae stats.
-    """
+    
+    # Para cada time step en riesgo_fuzzy, aplica máscara de zona y extrae stats.
+    
     if zona_gdf.crs != "EPSG:4326":
         zona_gdf = zona_gdf.to_crs(epsg=4326)
 

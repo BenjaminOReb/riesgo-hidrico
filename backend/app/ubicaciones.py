@@ -45,9 +45,9 @@ def cargar_jerarquia_ubicaciones(ruta_shapefile='shapefiles/comunas/comunas.shp'
     return jerarquia
 
 def obtener_zona_gdf(zona, valor):
-    """
-    Lee el shapefile de comuna/provincia/región y filtra por valor (case-insensitive).
-    """
+   
+    # Lee el shapefile de comuna/provincia/región y filtra por valor (case-insensitive).
+    
     z = zona.strip().lower()
     if z == 'comuna':
         gdf = gpd.read_file("shapefiles/comunas/comunas.shp")

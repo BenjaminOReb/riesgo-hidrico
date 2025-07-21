@@ -1,4 +1,3 @@
-// src/components/MapaImagen.jsx
 import React, { useEffect, useState, useRef, useMemo } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
