@@ -43,9 +43,8 @@ export default function MapaImagen({ tipo, zona, valor, fecha }) {
     switch (tipo) {
       case "riesgo":
         if (verPromedio) {
-          const avg = `${API_BASE}/api/promedio-riesgo-fuzzy-zona?zona=${zona}&valor=${enc(valor)}`;
-          urls.push({ key: "normal", url: avg });
-          urls.push({ key: "fuzzy",  url: avg });
+          urls.push({ key: "normal", url: `${API_BASE}/api/promedio-riesgo-raw-zona?zona=${zona}&valor=${enc(valor)}` });
+          urls.push({ key: "fuzzy",  url: `${API_BASE}/api/promedio-riesgo-fuzzy-zona?zona=${zona}&valor=${enc(valor)}` });
         } else {
           urls.push({
             key: "normal",
