@@ -1,4 +1,6 @@
 import os
+from pathlib import Path
+
 import xarray as xr
 import numpy as np
 
@@ -13,29 +15,36 @@ archivos = [
     "uploads/riesgo_fuzzy/riesgo_fuzzy_2019-05.nc"
 ]
 
-for ruta in archivos:
+# Sufijos que identifican las variables de interés
+sufijos = ("pr", "t2m", "_baja", "_media", "_alta", "riesgo_fuzzy", "riesgo_raw")
+
+for ruta_str in archivos:
+    ruta = Path(ruta_str)
     print(f"\n📄 Revisando: {ruta}")
     try:
-        if not os.path.exists(ruta):
+        if not ruta.exists():
             raise FileNotFoundError(f"No se encontró el archivo: {ruta}")
 
-        ds = xr.open_dataset(ruta, decode_times=False)  # usa cftime si es necesario
+        # Usamos context manager para asegurar el cierre del dataset
+        with xr.open_dataset(ruta, decode_times=False) as ds:
+            vars_all = list(ds.data_vars)
+            print("🔍 Variables disponibles:", vars_all)
 
-        print("🔍 Variables disponibles:", list(ds.variables))
-        print("📏 Dimensiones:", dict(ds.dims))
+            dims = dict(ds.dims)
+            print("📏 Dimensiones:", dims)
 
-        if "time" in ds:
-            fechas = ds['time'].values
-            print(f"🕒 Rango de fechas: {fechas[0]} → {fechas[-1]} ({len(fechas)} pasos de tiempo)")
+            if "time" in ds:
+                t0, tN = ds["time"].values[[0, -1]]
+                print(f"🕒 Rango de fechas: {t0} → {tN} ({dims['time']} pasos de tiempo)")
 
-        # Análisis de variables fuzzy
-        for var in ds.data_vars:
-            if any(suffix in var for suffix in ["_baja", "_media", "_alta", "riesgo_hidrico_fuzzy"]):
-                datos = ds[var].values
-                datos = np.where(np.isnan(datos), np.nan, datos)
-                print(f"📊 {var}: min={np.nanmin(datos):.3f}, max={np.nanmax(datos):.3f}, mean={np.nanmean(datos):.3f}")
-
-        ds.close()
+            # Solo analizamos las variables que contengan alguno de los sufijos
+            for var in vars_all:
+                if any(var.endswith(s) or s in var for s in sufijos):
+                    datos = ds[var].values.astype(float)
+                    minv = np.nanmin(datos)
+                    maxv = np.nanmax(datos)
+                    meanv = np.nanmean(datos)
+                    print(f"📊 {var:15s}: min={minv:.3f}, max={maxv:.3f}, mean={meanv:.3f}")
 
     except Exception as e:
         print(f"❌ Error con {ruta}: {e}")

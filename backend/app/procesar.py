@@ -6,11 +6,11 @@ import xarray as xr
 import numpy as np
 import skfuzzy as fuzz
 import geopandas as gpd
-import rasterio
 from rasterio.transform import from_origin
 from rasterio.crs import CRS
 from rasterio import features
 from affine import Affine
+import rasterio
 
 
 def limpiar_atributos_conflictivos(ds):
@@ -59,12 +59,9 @@ def recortar_ultimos_5_anos(ruta_archivo, carpeta_salida="uploads/recortado"):
 
 
 def generar_capas_fuzzy(ruta_archivo, carpeta_salida="uploads/fuzzy"):
-    
-    # Genera un NetCDF con capas fuzzy (baja, media, alta) para pr o t2m,
-    # calculando trapmf por región.
-    
     os.makedirs(carpeta_salida, exist_ok=True)
     ds = xr.open_dataset(ruta_archivo, decode_times=False)
+    # detecta variable
     if 'pr' in ds.data_vars:
         var = 'pr'
     elif 't2m' in ds.data_vars:
@@ -72,57 +69,53 @@ def generar_capas_fuzzy(ruta_archivo, carpeta_salida="uploads/fuzzy"):
     else:
         raise ValueError("No se reconoce variable 'pr' o 't2m'")
     da    = ds[var]
-    datos = da.values  # (time, lat, lon)
+    datos = da.values.astype(float)  # (time, lat, lon)
+    # --- transformación log para pr ----
+    if var == 'pr':
+        datos = np.log10(np.where(np.isnan(datos), np.nan, datos) + 0.1)
     T, Y, X = datos.shape
 
+    # rasteriza regiones
     regiones = gpd.read_file("shapefiles/regiones/Regional.shp").to_crs(epsg=4326)
     regiones['rid'] = np.arange(len(regiones))
-    lons = ds['lon'].values
-    lats = ds['lat'].values
-    transform = Affine.translation(lons[0] - 0.25, lats[0] - 0.25) * Affine.scale(0.05, 0.05)
-
+    lons = ds['lon'].values; lats = ds['lat'].values
+    transform = Affine.translation(lons[0]-0.25, lats[0]-0.25) * Affine.scale(0.05, 0.05)
     mask2d = features.rasterize(
-        [(geom, rid) for geom, rid in zip(regiones.geometry, regiones.rid)],
-        out_shape=(Y, X),
-        transform=transform,
-        fill=-1,
-        dtype='int16'
+        [(geom, rid) for geom,rid in zip(regiones.geometry, regiones.rid)],
+        out_shape=(Y, X), transform=transform, fill=-1, dtype='int16'
     )
 
-    baja_3d  = np.zeros_like(datos, dtype=float)
-    media_3d = np.zeros_like(datos, dtype=float)
-    alta_3d  = np.zeros_like(datos, dtype=float)
+    baja_3d  = np.zeros_like(datos)
+    media_3d = np.zeros_like(datos)
+    alta_3d  = np.zeros_like(datos)
 
     for rid in np.unique(mask2d):
-        if rid < 0:
-            continue
-        mask3d = (mask2d == rid)[None, :, :]
+        if rid < 0: continue
+        mask3d = (mask2d == rid)[None,:,:]
         mask3d = np.broadcast_to(mask3d, datos.shape)
-        vals   = datos[mask3d]
-        vals   = vals[~np.isnan(vals)]
-        if vals.size == 0:
-            continue
-        m = float(vals.min())
-        M = float(vals.max())
-        L8 = (M - m) / 8.0
-        L2 = (M + m) / 2.0
+        vals = datos[mask3d]
+        vals = vals[~np.isnan(vals)]
+        if vals.size == 0: continue
 
-        TL_low    = [m, m, m + L8,       m + 3*L8]
-        TL_med    = [L2 - 3*L8, L2 - L8, L2 + L8, L2 + 3*L8]
-        TL_high   = [M - 3*L8, M - L8, M, M]
+        # usa percentiles para los trapézios
+        m, M = vals.min(), vals.max()
+        p10, p50, p90 = np.nanpercentile(vals, [10,50,90])
+        TL_low  = [m, m, p10,  p50]
+        TL_med  = [p10, p50, p50, p90]
+        TL_high = [p50, p90, M,   M]
 
-        uni = np.linspace(m, M, 1000)
+        uni      = np.linspace(m, M, 1000)
         mf_low   = fuzz.trapmf(uni, TL_low)
         mf_med   = fuzz.trapmf(uni, TL_med)
         mf_high  = fuzz.trapmf(uni, TL_high)
 
-        regs = datos.copy()
-        regs[~mask3d] = np.nan
-
+        # mascara región
+        regs = np.where(mask3d, datos, np.nan)
         baja_3d[mask3d]  = fuzz.interp_membership(uni, mf_low,  regs)[mask3d]
         media_3d[mask3d] = fuzz.interp_membership(uni, mf_med,  regs)[mask3d]
         alta_3d[mask3d]  = fuzz.interp_membership(uni, mf_high, regs)[mask3d]
 
+    # añade variables al dataset
     ds[f"{var}_baja"]  = (da.dims, baja_3d)
     ds[f"{var}_media"] = (da.dims, media_3d)
     ds[f"{var}_alta"]  = (da.dims, alta_3d)
@@ -137,7 +130,7 @@ def generar_capas_fuzzy(ruta_archivo, carpeta_salida="uploads/fuzzy"):
         'archivo_salida': ruta_salida,
         'tipo_variable': var,
         'nombre_base': nombre_base,
-        'mensaje': "Capas fuzzy calculadas por región."
+        'mensaje': "Capas fuzzy calculadas por región (percentiles/log)."
     }
 
 
@@ -214,87 +207,46 @@ def calcular_fecha_desde_indice(nombre_base, indice):
     return f"{año}-{mes:02d}"
 
 
-def filtrar_riesgo_por_zona(zona_gdf, ruta_riesgo):
-    
-    # Para cada time step en riesgo_fuzzy, aplica máscara de zona y extrae stats.
-    
-    if zona_gdf.crs != "EPSG:4326":
-        zona_gdf = zona_gdf.to_crs(epsg=4326)
-
-    ds = xr.open_dataset(ruta_riesgo, decode_times=False)
-    rf = ds['riesgo_fuzzy']
-    lons = ds['lon'].values
-    lats = ds['lat'].values
-    times = ds['time'].values
-
-    transform = Affine.translation(lons[0] - 0.25, lats[0] - 0.25) * Affine.scale(0.05, 0.05)
-    mask = features.rasterize(
-        ((geom, 1) for geom in zona_gdf.geometry),
-        out_shape=(len(lats), len(lons)),
-        transform=transform,
-        fill=0,
-        dtype='uint8'
-    )
-
-    resultados = []
-    for i in range(len(times)):
-        capa = rf.isel(time=i).values
-        vals = capa[mask == 1]
-        vals = vals[~np.isnan(vals)]
-        if vals.size > 0:
-            resultados.append({
-                'time_index': i,
-                'min': float(vals.min()),
-                'max': float(vals.max()),
-                'mean': float(vals.mean()),
-                'count': int(vals.size)
-            })
-    ds.close()
-    return {'nombre_archivo': ruta_riesgo, 'cantidad_tiempos': len(resultados), 'resultados': resultados}
-
-
 def generar_geotiff_zona(zona_gdf, ruta_netcdf, indice_tiempo, var_name):
-   
-    # Genera un GeoTIFF de la variable var_name (p.ej. 'riesgo_fuzzy' o 'riesgo_raw')
-    # recortado a la geometría de zona_gdf en el time index indicado.
-   
-    # 1) Asegurar CRS
+    # 1) Asegurar CRS en EPSG:4326
     if zona_gdf.crs != "EPSG:4326":
         zona_gdf = zona_gdf.to_crs(epsg=4326)
 
-    # 2) Abrir NetCDF y extraer el array deseado
+    # 2) Abrir NetCDF y extraer la capa requerida
     ds   = xr.open_dataset(ruta_netcdf, decode_times=False)
     data = ds[var_name].isel(time=indice_tiempo).values
     lons = ds["lon"].values
     lats = ds["lat"].values
     ds.close()
 
-    # 3) Corregir orientación si está invertida
+    # 3) Asegurar orientación: latitudes de Norte a Sur
     if lats[0] > lats[-1]:
         data = data[::-1, :]
         lats = lats[::-1]
-    if lons[0] > lons[-1]:
-        data = data[:, ::-1]
-        lons = lons[::-1]
 
-    # 4) Definir transform geográfico (pixel 0.05°)
-    dx = abs(lons[1] - lons[0])
-    dy = abs(lats[1] - lats[0])
-    transform = Affine.translation(lons[0], lats[-1]) * Affine.scale(dx, -dy)
+    # 4) Definir transform con from_origin
+    dx = float(lons[1] - lons[0])
+    dy = float(lats[1] - lats[0])
+    transform = from_origin(
+        west=lons.min(),
+        north=lats.max(),
+        xsize=dx,
+        ysize=dy
+    )
 
-    # 5) Rasterizar la zona para crear máscara
+    # 5) Rasterizar la geometría de la zona
     mask = features.rasterize(
         ((geom, 1) for geom in zona_gdf.geometry),
         out_shape=data.shape,
         transform=transform,
         fill=0,
-        dtype="uint8",
+        dtype="uint8"
     )
 
-    # 6) Aplicar máscara: fuera de la zona → nan
+    # 6) Aplicar la máscara (fuera de la zona → NaN)
     data_mask = np.where(mask == 1, data, np.nan)
 
-    # 7) Escribir GeoTIFF en archivo temporal
+    # 7) Generar el archivo GeoTIFF temporal
     tmp = tempfile.NamedTemporaryFile(suffix=".tif", delete=False)
     with rasterio.open(
         tmp.name,
@@ -306,7 +258,7 @@ def generar_geotiff_zona(zona_gdf, ruta_netcdf, indice_tiempo, var_name):
         dtype="float32",
         crs=CRS.from_epsg(4326),
         transform=transform,
-        nodata=np.nan,
+        nodata=np.nan
     ) as dst:
         dst.write(data_mask.astype(np.float32), 1)
 

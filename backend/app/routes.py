@@ -8,7 +8,6 @@ import traceback
 import datetime
 import tempfile
 import uuid
-import geopandas as gpd
 from app.database import get_connection
 from app.ubicaciones import (
     cargar_jerarquia_ubicaciones,
@@ -19,7 +18,6 @@ from app.procesar import (
     calcular_indice_riesgo_fuzzy,
     calcular_indice_riesgo_raw,
     calcular_fecha_desde_indice,
-    filtrar_riesgo_por_zona,
     generar_geotiff_zona
 )
 
@@ -240,85 +238,6 @@ def obtener_ubicaciones():
         jerarquia = cargar_jerarquia_ubicaciones()
         return jsonify(jerarquia)
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@routes.route('/api/lista-zonas', methods=['GET'])
-def lista_zonas():
-
-    # Dada una zona ('region', 'provincia' o 'comuna'), lee el shapefile correspondiente
-    # y retorna la lista ordenada de nombres disponibles.
-
-    zona = request.args.get('zona')
-    if not zona:
-        return jsonify({'error': 'Falta el parámetro zona'}), 400
-
-    try:
-        # Selecciona el shapefile según tipo
-        if zona == 'region':
-            gdf = gpd.read_file("shapefiles/regiones/Regional.shp")
-            nombres = sorted(gdf["Region"].dropna().unique())
-        elif zona == 'provincia':
-            gdf = gpd.read_file("shapefiles/provincias/Provincias.shp")
-            nombres = sorted(gdf["Provincia"].dropna().unique())
-        elif zona == 'comuna':
-            gdf = gpd.read_file("shapefiles/comunas/comunas.shp")
-            nombres = sorted(gdf["Comuna"].dropna().unique())
-        else:
-            return jsonify({'error': 'Zona inválida'}), 400
-
-        return jsonify({'zona': zona, 'nombres': nombres})
-    except Exception as e:
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
-
-@routes.route('/api/riesgo-fuzzy-zona', methods=['GET'])
-def riesgo_fuzzy_por_zona():
-
-    # Filtra el índice de riesgo_fuzzy por la geometría de la zona indicada
-    # y devuelve un JSON con valores puntuales.
-
-    zona = request.args.get('zona')
-    valor = request.args.get('valor')
-    fecha = request.args.get('fecha')
-
-    if not zona or not valor or not fecha:
-        return jsonify({'error': 'Faltan parámetros'}), 400
-
-    ruta_riesgo = f"uploads/riesgo_fuzzy/riesgo_fuzzy_{fecha}.nc"
-    if not os.path.exists(ruta_riesgo):
-        return jsonify({'error': 'Archivo no encontrado'}), 404
-
-    try:
-        zona_gdf = obtener_zona_gdf(zona, valor)
-        resultado = filtrar_riesgo_por_zona(zona_gdf, ruta_riesgo)
-        return jsonify(resultado)
-    except Exception as e:
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
-
-@routes.route('/api/riesgo-raw-zona', methods=['GET'])
-def riesgo_raw_por_zona():
-
-    # Filtra el índice de riesgo_raw por la geometría de la zona indicada
-    # y devuelve un JSON con valores puntuales.
-
-    zona = request.args.get('zona')
-    valor = request.args.get('valor')
-    fecha = request.args.get('fecha')
-
-    if not zona or not valor or not fecha:
-        return jsonify({'error': 'Faltan parámetros'}), 400
-
-    ruta_riesgo = f"uploads/riesgo_raw/riesgo_raw_{fecha}.nc"
-    if not os.path.exists(ruta_riesgo):
-        return jsonify({'error': 'Archivo no encontrado'}), 404
-
-    try:
-        zona_gdf = obtener_zona_gdf(zona, valor)
-        resultado = filtrar_riesgo_por_zona(zona_gdf, ruta_riesgo)
-        return jsonify(resultado)
-    except Exception as e:
-        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
 @routes.route('/api/riesgo-fuzzy-geotiff', methods=['GET'])
@@ -857,15 +776,6 @@ def servir_temperatura_alta_fuzzy_geotiff():
 
     # 7) Devolver el GeoTIFF generado
     return send_file(ruta_tif, mimetype='image/tiff')
-
-@routes.route('/descargas/geotiff/<nombre>')
-def servir_geotiff(nombre):
-
-    # Permite descargar directamente un GeoTIFF ya generado.
-    ruta = f"uploads/riesgo_fuzzy/geotiff/{nombre}"
-    if os.path.exists(ruta):
-        return send_file(ruta, mimetype='image/tiff', as_attachment=False)
-    return jsonify({'error': 'Archivo no encontrado'}), 404
 
 @routes.route('/api/geojson', methods=['GET'])
 def geojson_zona():
