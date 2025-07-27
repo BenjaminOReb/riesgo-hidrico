@@ -175,7 +175,7 @@ export default function MapaImagen({ tipo, zona, valor, fecha }) {
       new GeoRasterLayer({
         georaster:            raster,
         opacity:              0.8,
-        resolution:           256,
+        resolution:           128,
         pixelValuesToColorFn: colorFn
       }).addTo(entry.map);
 
