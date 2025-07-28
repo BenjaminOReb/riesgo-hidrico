@@ -61,105 +61,104 @@ def recortar_ultimos_5_anos(ruta_archivo, carpeta_salida="uploads/recortado"):
 
 def generar_capas_fuzzy(ruta_archivo, carpeta_salida="uploads/fuzzy"):
     os.makedirs(carpeta_salida, exist_ok=True)
-    ds = xr.open_dataset(ruta_archivo, decode_times=False)
 
-    # 1) Detectar variable
-    if 'pr' in ds.data_vars:
-        var = 'pr'
-    elif 't2m' in ds.data_vars:
-        var = 't2m'
-    else:
-        raise ValueError("No se reconoce variable 'pr' o 't2m'")
-
-    da = ds[var]
+    # 1) Abrir NetCDF original
+    raw = xr.open_dataset(ruta_archivo, decode_times=False)
+    da = raw['pr'] if 'pr' in raw else raw['t2m']
+    var = da.name
     datos = da.values.astype(float)  # (time, lat, lon)
 
-    # 2) Para precipitación, usar log
+    # 2) Log si es precipitación
     if var == 'pr':
         datos = np.log10(datos + 0.1)
 
     T, Y, X = datos.shape
 
-    # 3) Rasterizar regiones con transform correcto
-    regiones = gpd.read_file("shapefiles/regiones/Regional.shp").to_crs(epsg=4326)
-    regiones['rid'] = np.arange(len(regiones))
-    lons, lats = ds['lon'].values, ds['lat'].values
+    # 3) Guardar rejilla original
+    lons = raw['lon'].values.copy()
+    lats = raw['lat'].values.copy()
 
-    # Crear transform desde los bounds de la rejilla
-    lon_min, lon_max = lons.min(), lons.max()
-    lat_min, lat_max = lats.min(), lats.max()
+    # 4) Rasterizar regiones
+    regiones = (
+        gpd.read_file("shapefiles/regiones/Regional.shp")
+           .to_crs(epsg=4326)
+           .assign(rid=lambda df: np.arange(len(df)))
+    )
     transform = from_bounds(
-        lon_min, lat_min, lon_max, lat_max,
+        lons.min(), lats.min(), lons.max(), lats.max(),
         width=X, height=Y
     )
-
     mask2d = features.rasterize(
-        [(geom, rid) for geom, rid in zip(regiones.geometry, regiones.rid)],
-        out_shape=(Y, X),
-        transform=transform,
-        fill=-1,
-        dtype='int16'
+        [(g, rid) for g, rid in zip(regiones.geometry, regiones.rid)],
+        out_shape=(Y, X), transform=transform,
+        fill=-1, dtype='int16'
     )
 
-    # 4) Inicializar membership arrays en 0, conservar NaN del raw
-    baja_3d  = np.zeros_like(datos, dtype=float)
-    media_3d = np.zeros_like(datos, dtype=float)
-    alta_3d  = np.zeros_like(datos, dtype=float)
+    # 5) Inicializar arrays fuzzy
+    baja  = np.zeros_like(datos);  baja [np.isnan(datos)] = np.nan
+    media = np.zeros_like(datos); media[np.isnan(datos)] = np.nan
+    alta  = np.zeros_like(datos);  alta [np.isnan(datos)] = np.nan
 
-    baja_3d[np.isnan(datos)]  = np.nan
-    media_3d[np.isnan(datos)] = np.nan
-    alta_3d[np.isnan(datos)]  = np.nan
-
-    # 5) Calcular por región
+    # 6) Calcular memberships
     for rid in np.unique(mask2d):
-        if rid < 0:
-            continue
-
-        # Máscara para datos válidos dentro de la región
-        mask_region = (mask2d == rid)
-        mask3d = np.broadcast_to(mask_region[None, :, :], datos.shape)
-        valid = mask3d & (~np.isnan(datos))
-        if not valid.any():
-            continue
+        if rid < 0: continue
+        msk2 = (mask2d == rid)
+        msk3 = np.broadcast_to(msk2[None], datos.shape)
+        valid = msk3 & ~np.isnan(datos)
+        if not valid.any(): continue
 
         vals = datos[valid]
-        m, M = float(vals.min()), float(vals.max())
-        L8 = (M - m) / 8.0
-        L2 = (M + m) / 2.0
+        m, M = vals.min(), vals.max()
+        L8 = (M - m)/8.0
+        L2 = (M + m)/2.0
+        uni = np.linspace(m, M, 1000)
 
-        TL_low  = [m, m,       m + L8,   m + 3*L8]
-        TL_med  = [L2-3*L8, L2-L8, L2+L8, L2+3*L8]
-        TL_high = [M-3*L8,   M-L8,   M,      M]
+        mf_low  = fuzz.trapmf(uni, [m,    m,    m+L8,   m+3*L8])
+        mf_med  = fuzz.trapmf(uni, [L2-3*L8, L2-L8, L2+L8, L2+3*L8])
+        mf_high = fuzz.trapmf(uni, [M-3*L8,   M-L8,   M,      M])
 
-        uni       = np.linspace(m, M, 1000)
-        mf_low    = fuzz.trapmf(uni, TL_low)
-        mf_med    = fuzz.trapmf(uni, TL_med)
-        mf_high   = fuzz.trapmf(uni, TL_high)
+        v = datos[valid]
+        baja [valid] = fuzz.interp_membership(uni, mf_low,  v)
+        media[valid] = fuzz.interp_membership(uni, mf_med,  v)
+        alta [valid] = fuzz.interp_membership(uni, mf_high, v)
 
-        # Interpolar solo en celdas válidas
-        data_valid = datos[valid]
-        baja_3d[valid]  = fuzz.interp_membership(uni, mf_low,  data_valid)
-        media_3d[valid] = fuzz.interp_membership(uni, mf_med,  data_valid)
-        alta_3d[valid]  = fuzz.interp_membership(uni, mf_high, data_valid)
+    # 7) Forzar orientación:  
+    #    Si latitudes van de Sur→Norte, invertimos eje lat (axis=1).
+    if lats[0] < lats[-1]:
+        baja  = baja[:, ::-1, :]
+        media = media[:, ::-1, :]
+        alta  = alta[:, ::-1, :]
+        lats = lats[::-1]
+    #    Si longitudes van de Este→Oeste, invertimos eje lon (axis=2).
+    if lons[0] > lons[-1]:
+        baja  = baja[:, :, ::-1]
+        media = media[:, :, ::-1]
+        alta  = alta[:, :, ::-1]
+        lons = lons[::-1]
 
-    # 6) Añadir al Dataset y exportar
-    ds[f"{var}_baja"]  = (da.dims, baja_3d)
-    ds[f"{var}_media"] = (da.dims, media_3d)
-    ds[f"{var}_alta"]  = (da.dims, alta_3d)
+    # 8) Crear DataArrays con coords y dims exactos
+    coords = {'time': raw['time'], 'lat': lats, 'lon': lons}
+    dims = ('time','lat','lon')
+    da_baja  = xr.DataArray(baja,  dims=dims, coords=coords, name=f"{var}_baja")
+    da_media = xr.DataArray(media, dims=dims, coords=coords, name=f"{var}_media")
+    da_alta  = xr.DataArray(alta,  dims=dims, coords=coords, name=f"{var}_alta")
 
+    # 9) Montar Dataset de salida
+    ds = raw.assign({da_baja.name: da_baja,
+                     da_media.name: da_media,
+                     da_alta.name: da_alta})
+    ds = ds.transpose('time','lat','lon')
+
+    # 10) Guardar y cerrar
     ds = limpiar_atributos_conflictivos(ds)
-    nombre_base = generar_nombre_base(ds)
-    ruta_salida = os.path.join(carpeta_salida, f"fuzzy_{var}_{nombre_base}.nc")
-    ds.to_netcdf(ruta_salida)
+    base = generar_nombre_base(ds)
+    out = os.path.join(carpeta_salida, f"fuzzy_{var}_{base}.nc")
+    ds.to_netcdf(out)
+    raw.close()
     ds.close()
 
-    return {
-        'archivo_salida': ruta_salida,
-        'tipo_variable': var,
-        'nombre_base': nombre_base,
-        'mensaje': "Capas fuzzy calculadas por región."
-    }
-
+    return {'archivo_salida': out, 'tipo_variable': var,
+            'nombre_base': base, 'mensaje': "Capas fuzzy calculadas."}
 
 def calcular_indice_riesgo_fuzzy(pr_path, t2m_path, carpeta_salida="uploads/riesgo_fuzzy"):
     
@@ -235,25 +234,39 @@ def calcular_fecha_desde_indice(nombre_base, indice):
 
 
 def generar_geotiff_zona(zona_gdf, ruta_netcdf, indice_tiempo, var_name):
-    # 1) Asegurar CRS en EPSG:4326
-    if zona_gdf.crs != "EPSG:4326":
+    """
+    Genera un GeoTIFF recortado a la geometría zona_gdf, a partir de la variable var_name
+    en el netCDF ruta_netcdf en el paso temporal indice_tiempo.
+    Corrige la orientación de eje X e Y para que se muestre correctamente en Leaflet.
+    """
+
+    # 1) Asegurar CRS de la zona
+    if zona_gdf.crs is None or zona_gdf.crs.to_string() != "EPSG:4326":
         zona_gdf = zona_gdf.to_crs(epsg=4326)
 
-    # 2) Abrir NetCDF y extraer la capa requerida
-    ds   = xr.open_dataset(ruta_netcdf, decode_times=False)
-    data = ds[var_name].isel(time=indice_tiempo).values
-    lons = ds["lon"].values
-    lats = ds["lat"].values
+    # 2) Abrir el netCDF y extraer la capa (no decodificamos time)
+    ds = xr.open_dataset(ruta_netcdf, decode_times=False)
+    if var_name not in ds.data_vars:
+        ds.close()
+        raise KeyError(f"Variable {var_name} no encontrada en {ruta_netcdf}")
+    data = ds[var_name].isel(time=indice_tiempo).values.astype(np.float32)
+    lons = ds["lon"].values.copy()
+    lats = ds["lat"].values.copy()
     ds.close()
 
-    # 3) Asegurar orientación: latitudes de Norte a Sur
-    if lats[0] > lats[-1]:
+    # 3) Forzar orientación de Z:
+    #    latitudes de Norte→Sur (descendiente)
+    if lats[0] < lats[-1]:
         data = data[::-1, :]
         lats = lats[::-1]
+    #    longitudes de Oeste→Este (ascendiente)
+    if lons[0] > lons[-1]:
+        data = data[:, ::-1]
+        lons = lons[::-1]
 
-    # 4) Definir transform con from_origin
+    # 4) Calcular resolución y transform
     dx = float(lons[1] - lons[0])
-    dy = float(lats[1] - lats[0])
+    dy = float(lats[0] - lats[1])  # lats[0]>lats[1] tras invertir
     transform = from_origin(
         west=lons.min(),
         north=lats.max(),
@@ -261,7 +274,7 @@ def generar_geotiff_zona(zona_gdf, ruta_netcdf, indice_tiempo, var_name):
         ysize=dy
     )
 
-    # 5) Rasterizar la geometría de la zona
+    # 5) Rasterizar la zona (1 dentro, 0 fuera)
     mask = features.rasterize(
         ((geom, 1) for geom in zona_gdf.geometry),
         out_shape=data.shape,
@@ -270,23 +283,28 @@ def generar_geotiff_zona(zona_gdf, ruta_netcdf, indice_tiempo, var_name):
         dtype="uint8"
     )
 
-    # 6) Aplicar la máscara (fuera de la zona → NaN)
+    # 6) Aplicar máscara: fuera de zona → nodata
     data_mask = np.where(mask == 1, data, np.nan)
 
-    # 7) Generar el archivo GeoTIFF temporal
+    # 7) Crear GeoTIFF temporal
     tmp = tempfile.NamedTemporaryFile(suffix=".tif", delete=False)
-    with rasterio.open(
-        tmp.name,
-        "w",
-        driver="GTiff",
-        height=data_mask.shape[0],
-        width=data_mask.shape[1],
-        count=1,
-        dtype="float32",
-        crs=CRS.from_epsg(4326),
-        transform=transform,
-        nodata=np.nan
-    ) as dst:
-        dst.write(data_mask.astype(np.float32), 1)
+    profile = {
+        "driver": "GTiff",
+        "height": data_mask.shape[0],
+        "width": data_mask.shape[1],
+        "count": 1,
+        "dtype": "float32",
+        "crs": CRS.from_epsg(4326),
+        "transform": transform,
+        "nodata": np.nan,
+        # Opciones de rendimiento
+        "compress": "lzw",
+        "tiled": True,
+    }
+
+    with rasterio.open(tmp.name, "w", **profile) as dst:
+        dst.write(data_mask, 1)
+        # Escribimos la máscara interna (0 transparente, 255 opaco)
+        dst.write_mask((mask * 255).astype("uint8"))
 
     return tmp.name

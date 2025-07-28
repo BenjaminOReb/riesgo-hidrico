@@ -1,27 +1,28 @@
+import os
 import geopandas as gpd
+from shapely.validation import explain_validity
 
-# Ruta al shapefile de comunas (ajusta si tienes otro nombre)
-shapefile_path = "shapefiles/comunas/comunas.shp"
+SHAPE_DIR = "shapefiles/regiones"  # ajusta si tu carpeta es distinta
 
-try:
-    gdf = gpd.read_file(shapefile_path)
+for fname in sorted(os.listdir(SHAPE_DIR)):
+    if not fname.lower().endswith(".shp"):
+        continue
+    path = os.path.join(SHAPE_DIR, fname)
+    gdf = gpd.read_file(path)
 
-    print("✅ Shapefile cargado correctamente.")
-    print(f"🗺️ Número de comunas: {len(gdf)}")
-    print("📌 Columnas disponibles:")
-    print(gdf.columns)
+    print(f"=== {fname} ===")
+    print(f"CRS: {gdf.crs}")
+    print(f"Total features: {len(gdf)}")
+    print("Fields:", list(gdf.columns))
+    print(" Null counts per field:", gdf.isnull().sum().to_dict())
 
-    print("\n📍 Ejemplo de nombres:")
-    print(gdf[['REGION', 'PROVINCIA', 'COMUNA']].head())
+    invalid = gdf[~gdf.is_valid]
+    print(f"Invalid geometries: {len(invalid)}")
+    if len(invalid) > 0:
+        # contamos razones de invalidez
+        reasons = invalid.geometry.apply(explain_validity).value_counts().to_dict()
+        print(" Invalid reasons:", reasons)
 
-except Exception as e:
-    print("\n📍 Ejemplo de nombres:")
-for col in gdf.columns:
-    print(f" - {col}")
-
-# Verificar presencia de columnas clave
-for col in ['Region', 'Provincia', 'Comuna']:
-    if col not in gdf.columns:
-        raise ValueError(f"Columna '{col}' no encontrada")
-
-print(gdf[['Region', 'Provincia', 'Comuna']].head())
+    bounds = gdf.total_bounds  # [xmin, ymin, xmax, ymax]
+    print(f"Total bounds: [{bounds[0]:.3f}, {bounds[1]:.3f}, {bounds[2]:.3f}, {bounds[3]:.3f}]")
+    print()
