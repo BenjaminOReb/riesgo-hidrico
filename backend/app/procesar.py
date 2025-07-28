@@ -62,53 +62,60 @@ def recortar_ultimos_5_anos(ruta_archivo, carpeta_salida="uploads/recortado"):
 def generar_capas_fuzzy(ruta_archivo, carpeta_salida="uploads/fuzzy"):
     os.makedirs(carpeta_salida, exist_ok=True)
 
-    # 1) Abrir NetCDF original
-    raw = xr.open_dataset(ruta_archivo, decode_times=False)
-    da = raw['pr'] if 'pr' in raw else raw['t2m']
-    var = da.name
-    datos = da.values.astype(float)  # (time, lat, lon)
+    # 1) Abrir el NetCDF original
+    ds_raw = xr.open_dataset(ruta_archivo, decode_times=False)
+    if 'pr' in ds_raw.data_vars:
+        var = 'pr'
+    elif 't2m' in ds_raw.data_vars:
+        var = 't2m'
+    else:
+        ds_raw.close()
+        raise ValueError("No se reconoce variable 'pr' o 't2m'")
 
-    # 2) Log si es precipitación
+    da = ds_raw[var]                        # DataArray (time, lat, lon)
+    datos = da.values.astype(float)         # numpy array
+
+    # 2) Log10 si es precipitación
     if var == 'pr':
         datos = np.log10(datos + 0.1)
 
+    # 3) Guardar rejilla original
+    orig_lons = ds_raw.lon.values.copy()
+    orig_lats = ds_raw.lat.values.copy()
     T, Y, X = datos.shape
 
-    # 3) Guardar rejilla original
-    lons = raw['lon'].values.copy()
-    lats = raw['lat'].values.copy()
-
     # 4) Rasterizar regiones
-    regiones = (
-        gpd.read_file("shapefiles/regiones/Regional.shp")
-           .to_crs(epsg=4326)
-           .assign(rid=lambda df: np.arange(len(df)))
-    )
+    regiones = (gpd.read_file("shapefiles/regiones/Regional.shp")
+                    .to_crs(epsg=4326)
+                    .assign(rid=lambda df: np.arange(len(df))))
     transform = from_bounds(
-        lons.min(), lats.min(), lons.max(), lats.max(),
+        orig_lons.min(), orig_lats.max(),
+        orig_lons.max(), orig_lats.min(),
         width=X, height=Y
     )
     mask2d = features.rasterize(
         [(g, rid) for g, rid in zip(regiones.geometry, regiones.rid)],
-        out_shape=(Y, X), transform=transform,
-        fill=-1, dtype='int16'
+        out_shape=(Y, X),
+        transform=transform,
+        fill=-1,
+        dtype='int16'
     )
 
-    # 5) Inicializar arrays fuzzy
+    # 5) Preparar arrays fuzzy
     baja  = np.zeros_like(datos);  baja [np.isnan(datos)] = np.nan
     media = np.zeros_like(datos); media[np.isnan(datos)] = np.nan
     alta  = np.zeros_like(datos);  alta [np.isnan(datos)] = np.nan
 
-    # 6) Calcular memberships
+    # 6) Calcular membresías
     for rid in np.unique(mask2d):
         if rid < 0: continue
-        msk2 = (mask2d == rid)
-        msk3 = np.broadcast_to(msk2[None], datos.shape)
-        valid = msk3 & ~np.isnan(datos)
+        region_mask = (mask2d == rid)
+        mask3d = np.broadcast_to(region_mask[None], datos.shape)
+        valid = mask3d & (~np.isnan(datos))
         if not valid.any(): continue
 
         vals = datos[valid]
-        m, M = vals.min(), vals.max()
+        m, M = float(vals.min()), float(vals.max())
         L8 = (M - m)/8.0
         L2 = (M + m)/2.0
         uni = np.linspace(m, M, 1000)
@@ -122,43 +129,49 @@ def generar_capas_fuzzy(ruta_archivo, carpeta_salida="uploads/fuzzy"):
         media[valid] = fuzz.interp_membership(uni, mf_med,  v)
         alta [valid] = fuzz.interp_membership(uni, mf_high, v)
 
-    # 7) Forzar orientación:  
-    #    Si latitudes van de Sur→Norte, invertimos eje lat (axis=1).
-    if lats[0] < lats[-1]:
+    # 7) Voltear arrays si la rejilla original está invertida
+    #    latitudes
+    if orig_lats[0] < orig_lats[-1]:
         baja  = baja[:, ::-1, :]
         media = media[:, ::-1, :]
         alta  = alta[:, ::-1, :]
-        lats = lats[::-1]
-    #    Si longitudes van de Este→Oeste, invertimos eje lon (axis=2).
-    if lons[0] > lons[-1]:
+        orig_lats = orig_lats[::-1]
+    #    longitudes
+    if orig_lons[0] > orig_lons[-1]:
         baja  = baja[:, :, ::-1]
         media = media[:, :, ::-1]
         alta  = alta[:, :, ::-1]
-        lons = lons[::-1]
+        orig_lons = orig_lons[::-1]
 
-    # 8) Crear DataArrays con coords y dims exactos
-    coords = {'time': raw['time'], 'lat': lats, 'lon': lons}
-    dims = ('time','lat','lon')
+    # 8) Crear DataArrays fuzzy con las coords corregidas
+    coords = {'time': ds_raw.time, 'lat': orig_lats, 'lon': orig_lons}
+    dims = ('time', 'lat', 'lon')
     da_baja  = xr.DataArray(baja,  dims=dims, coords=coords, name=f"{var}_baja")
     da_media = xr.DataArray(media, dims=dims, coords=coords, name=f"{var}_media")
     da_alta  = xr.DataArray(alta,  dims=dims, coords=coords, name=f"{var}_alta")
 
-    # 9) Montar Dataset de salida
-    ds = raw.assign({da_baja.name: da_baja,
-                     da_media.name: da_media,
-                     da_alta.name: da_alta})
-    ds = ds.transpose('time','lat','lon')
+    # 9) Montar y ordenar Dataset de salida
+    ds_out = ds_raw.assign({
+        da_baja.name:  da_baja,
+        da_media.name: da_media,
+        da_alta.name:  da_alta
+    })
+    ds_out = ds_out.transpose('time','lat','lon')
 
     # 10) Guardar y cerrar
-    ds = limpiar_atributos_conflictivos(ds)
-    base = generar_nombre_base(ds)
-    out = os.path.join(carpeta_salida, f"fuzzy_{var}_{base}.nc")
-    ds.to_netcdf(out)
-    raw.close()
-    ds.close()
+    ds_out = limpiar_atributos_conflictivos(ds_out)
+    nombre_base = generar_nombre_base(ds_out)
+    ruta_salida = os.path.join(carpeta_salida, f"fuzzy_{var}_{nombre_base}.nc")
+    ds_out.to_netcdf(ruta_salida)
+    ds_raw.close()
+    ds_out.close()
 
-    return {'archivo_salida': out, 'tipo_variable': var,
-            'nombre_base': base, 'mensaje': "Capas fuzzy calculadas."}
+    return {
+        'archivo_salida': ruta_salida,
+        'tipo_variable': var,
+        'nombre_base': nombre_base,
+        'mensaje': "Capas fuzzy calculadas por región."
+    }
 
 def calcular_indice_riesgo_fuzzy(pr_path, t2m_path, carpeta_salida="uploads/riesgo_fuzzy"):
     
