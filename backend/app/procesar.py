@@ -7,6 +7,7 @@ import numpy as np
 import skfuzzy as fuzz
 import geopandas as gpd
 from rasterio.transform import from_origin
+from rasterio.transform import from_bounds
 from rasterio.crs import CRS
 from rasterio import features
 from affine import Affine
@@ -59,7 +60,6 @@ def recortar_ultimos_5_anos(ruta_archivo, carpeta_salida="uploads/recortado"):
 
 
 def generar_capas_fuzzy(ruta_archivo, carpeta_salida="uploads/fuzzy"):
-  
     os.makedirs(carpeta_salida, exist_ok=True)
     ds = xr.open_dataset(ruta_archivo, decode_times=False)
 
@@ -80,60 +80,67 @@ def generar_capas_fuzzy(ruta_archivo, carpeta_salida="uploads/fuzzy"):
 
     T, Y, X = datos.shape
 
-    # 3) Rasterizar regiones
+    # 3) Rasterizar regiones con transform correcto
     regiones = gpd.read_file("shapefiles/regiones/Regional.shp").to_crs(epsg=4326)
     regiones['rid'] = np.arange(len(regiones))
     lons, lats = ds['lon'].values, ds['lat'].values
-    transform = Affine.translation(lons[0] - 0.5* (lons[1]-lons[0]),
-                                   lats[0] - 0.5* (lats[1]-lats[0])) \
-                * Affine.scale(lons[1]-lons[0], lats[1]-lats[0])
+
+    # Crear transform desde los bounds de la rejilla
+    lon_min, lon_max = lons.min(), lons.max()
+    lat_min, lat_max = lats.min(), lats.max()
+    transform = from_bounds(
+        lon_min, lat_min, lon_max, lat_max,
+        width=X, height=Y
+    )
 
     mask2d = features.rasterize(
-        [(g, rid) for g, rid in zip(regiones.geometry, regiones.rid)],
+        [(geom, rid) for geom, rid in zip(regiones.geometry, regiones.rid)],
         out_shape=(Y, X),
         transform=transform,
         fill=-1,
         dtype='int16'
     )
 
-    # 4) Inicializar con NaN (solo llenaremos dentro de cada región)
-    baja_3d  = np.full_like(datos, np.nan, dtype=float)
-    media_3d = np.full_like(datos, np.nan, dtype=float)
-    alta_3d  = np.full_like(datos, np.nan, dtype=float)
+    # 4) Inicializar membership arrays en 0, conservar NaN del raw
+    baja_3d  = np.zeros_like(datos, dtype=float)
+    media_3d = np.zeros_like(datos, dtype=float)
+    alta_3d  = np.zeros_like(datos, dtype=float)
+
+    baja_3d[np.isnan(datos)]  = np.nan
+    media_3d[np.isnan(datos)] = np.nan
+    alta_3d[np.isnan(datos)]  = np.nan
 
     # 5) Calcular por región
     for rid in np.unique(mask2d):
         if rid < 0:
             continue
-        mask3d = (mask2d == rid)[None, :, :]
-        mask3d = np.broadcast_to(mask3d, datos.shape)
 
-        vals = datos[mask3d]
-        vals = vals[~np.isnan(vals)]
-        if vals.size == 0:
+        # Máscara para datos válidos dentro de la región
+        mask_region = (mask2d == rid)
+        mask3d = np.broadcast_to(mask_region[None, :, :], datos.shape)
+        valid = mask3d & (~np.isnan(datos))
+        if not valid.any():
             continue
 
-        m = float(vals.min())
-        M = float(vals.max())
+        vals = datos[valid]
+        m, M = float(vals.min()), float(vals.max())
         L8 = (M - m) / 8.0
         L2 = (M + m) / 2.0
 
-        # Ajusta estos parámetros si quieres otros perfiles
         TL_low  = [m, m,       m + L8,   m + 3*L8]
         TL_med  = [L2-3*L8, L2-L8, L2+L8, L2+3*L8]
         TL_high = [M-3*L8,   M-L8,   M,      M]
 
-        uni     = np.linspace(m, M, 1000)
-        mf_low  = fuzz.trapmf(uni, TL_low)
-        mf_med  = fuzz.trapmf(uni, TL_med)
-        mf_high = fuzz.trapmf(uni, TL_high)
+        uni       = np.linspace(m, M, 1000)
+        mf_low    = fuzz.trapmf(uni, TL_low)
+        mf_med    = fuzz.trapmf(uni, TL_med)
+        mf_high   = fuzz.trapmf(uni, TL_high)
 
-        regs = datos.copy()
-        regs[~mask3d] = np.nan
-
-        baja_3d[mask3d]  = fuzz.interp_membership(uni, mf_low,  regs)[mask3d]
-        media_3d[mask3d] = fuzz.interp_membership(uni, mf_med,  regs)[mask3d]
-        alta_3d[mask3d]  = fuzz.interp_membership(uni, mf_high, regs)[mask3d]
+        # Interpolar solo en celdas válidas
+        data_valid = datos[valid]
+        baja_3d[valid]  = fuzz.interp_membership(uni, mf_low,  data_valid)
+        media_3d[valid] = fuzz.interp_membership(uni, mf_med,  data_valid)
+        alta_3d[valid]  = fuzz.interp_membership(uni, mf_high, data_valid)
 
     # 6) Añadir al Dataset y exportar
     ds[f"{var}_baja"]  = (da.dims, baja_3d)
