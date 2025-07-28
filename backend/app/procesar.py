@@ -13,6 +13,11 @@ from rasterio import features
 from affine import Affine
 import rasterio
 
+ZONE_MAP = {
+    'region':    ('shapefiles/regiones/Regional.shp',     'Region'),
+    'provincia': ('shapefiles/provincias/Provincias.shp', 'Provincia'),
+    'comuna':    ('shapefiles/comunas/comunas.shp',       'Comuna')
+}
 
 def limpiar_atributos_conflictivos(ds):
     
@@ -173,6 +178,7 @@ def generar_capas_fuzzy(ruta_archivo, carpeta_salida="uploads/fuzzy"):
         'mensaje': "Capas fuzzy calculadas por región."
     }
 
+
 def calcular_indice_riesgo_fuzzy(pr_path, t2m_path, carpeta_salida="uploads/riesgo_fuzzy"):
     
     # Genera un NetCDF con índice de riesgo fuzzy = max(pr_baja, t2m_alta).
@@ -321,3 +327,78 @@ def generar_geotiff_zona(zona_gdf, ruta_netcdf, indice_tiempo, var_name):
         dst.write_mask((mask * 255).astype("uint8"))
 
     return tmp.name
+
+
+def calcular_stats_fuzzy(zona_gdf, ruta_netcdf, indice_tiempo, var_name):
+    """
+    Calcula las funciones de pertenencia (baja, media, alta) para la variable var_name
+    ('pr' o 't2m') en el NetCDF ruta_netcdf, recortada a la geometría zona_gdf
+    y al paso temporal indice_tiempo. Devuelve un dict con:
+      - 'categories': dominio de entrada (100 puntos)
+      - 'baja', 'media', 'alta': listas con el grado de pertenencia [0–1]
+    """
+
+    # 1) Asegurar CRS en EPSG:4326
+    if zona_gdf.crs is None or zona_gdf.crs.to_string() != "EPSG:4326":
+        zona_gdf = zona_gdf.to_crs(epsg=4326)
+
+    # 2) Abrir NetCDF y extraer la capa deseada
+    ds = xr.open_dataset(ruta_netcdf, decode_times=False)
+    if var_name not in ds.data_vars:
+        ds.close()
+        raise KeyError(f"Variable '{var_name}' no encontrada en {ruta_netcdf}")
+    da = ds[var_name].isel(time=indice_tiempo)  # DataArray (lat, lon)
+    data2d = da.values.astype(float)
+    lons = da["lon"].values
+    lats = da["lat"].values
+    ds.close()
+
+    # 3) Forzar orientación: lat Norte→Sur, lon Oeste→Este
+    if lats[0] < lats[-1]:
+        data2d = data2d[::-1, :]
+        lats = lats[::-1]
+    if lons[0] > lons[-1]:
+        data2d = data2d[:, ::-1]
+        lons = lons[::-1]
+
+    # 4) Rasterizar la zona (1 dentro, 0 fuera)
+    transform = from_bounds(
+        lons.min(), lats.min(),
+        lons.max(), lats.max(),
+        width=data2d.shape[1],
+        height=data2d.shape[0]
+    )
+    mask2d = features.rasterize(
+        [(geom, 1) for geom in zona_gdf.geometry],
+        out_shape=data2d.shape,
+        transform=transform,
+        fill=0,
+        dtype="uint8"
+    )
+
+    # 5) Extraer valores válidos dentro de la zona
+    vals = data2d[mask2d == 1]
+    vals = vals[~np.isnan(vals)]
+    if vals.size == 0:
+        raise ValueError("No hay datos válidos en esa zona/fecha")
+
+    # 6) Calcular parámetros trapezoidales
+    m, M = float(vals.min()), float(vals.max())
+    L8 = (M - m) / 8.0
+    L2 = (M + m) / 2.0
+    TL_low  = [m,      m,       m+L8,    m+3*L8]
+    TL_med  = [L2-3*L8, L2-L8,  L2+L8,   L2+3*L8]
+    TL_high = [M-3*L8,  M-L8,   M,       M]
+
+    # 7) Generar las MFs sobre un dominio de 100 puntos
+    uni    = np.linspace(m, M, 100)
+    baja   = fuzz.trapmf(uni, TL_low).tolist()
+    media  = fuzz.trapmf(uni, TL_med).tolist()
+    alta   = fuzz.trapmf(uni, TL_high).tolist()
+
+    return {
+        "categories": uni.tolist(),
+        "baja":       baja,
+        "media":      media,
+        "alta":       alta
+    }

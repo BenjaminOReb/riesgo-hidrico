@@ -18,7 +18,8 @@ from app.procesar import (
     calcular_indice_riesgo_fuzzy,
     calcular_indice_riesgo_raw,
     calcular_fecha_desde_indice,
-    generar_geotiff_zona
+    generar_geotiff_zona,
+    calcular_stats_fuzzy
 )
 
 #Blueprint para organizar las rutas
@@ -958,3 +959,96 @@ def promedio_riesgo_raw_zona():
         import traceback
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
+    
+@routes.route('/api/precipitacion-fuzzy-stats', methods=['GET'])
+def api_precipitacion_fuzzy_stats():
+    zona  = request.args.get('zona')
+    valor = request.args.get('valor')
+    fecha = request.args.get('fecha')  # formato "YYYY-MM"
+    if not zona or not valor or not fecha:
+        return jsonify({'error': 'Faltan parámetros: zona, valor, fecha'}), 400
+
+    # 1) Buscar el NetCDF de precipitación que cubra esa fecha
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT ruta, fecha_inicial_datos
+        FROM archivos
+        WHERE tipo_archivo = 'pr'
+          AND fecha_inicial_datos <= %s
+          AND fecha_final_datos   >= %s
+        ORDER BY fecha_final_datos DESC
+        LIMIT 1
+    """, (fecha, fecha))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+
+    if not row:
+        return jsonify({'error': f'No hay datos de precipitación para {fecha}'}), 404
+
+    ruta_nc, fecha_ini = row
+
+    # 2) Calcular índice de tiempo (meses desde fecha_ini hasta fecha)
+    f_req = datetime.datetime.strptime(fecha,     "%Y-%m").date().replace(day=1)
+    f_ini = datetime.datetime.strptime(fecha_ini[:7], "%Y-%m").date().replace(day=1)
+    idx = (f_req.year - f_ini.year) * 12 + (f_req.month - f_ini.month)
+    if idx < 0:
+        return jsonify({'error': 'Fecha solicitada anterior al inicio de datos'}), 400
+
+    # 3) Obtener la geometría de la zona y reproyectar
+    zona_gdf = obtener_zona_gdf(zona, valor).to_crs(epsg=4326)
+
+    # 4) Calcular stats fuzzy
+    try:
+        stats = calcular_stats_fuzzy(zona_gdf, ruta_nc, idx, 'pr')
+        return jsonify(stats)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
+
+
+@routes.route('/api/temperatura-fuzzy-stats', methods=['GET'])
+def api_temperatura_fuzzy_stats():
+    zona  = request.args.get('zona')
+    valor = request.args.get('valor')
+    fecha = request.args.get('fecha')  # formato "YYYY-MM"
+    if not zona or not valor or not fecha:
+        return jsonify({'error': 'Faltan parámetros: zona, valor, fecha'}), 400
+
+    # 1) Buscar el NetCDF de temperatura que cubra esa fecha
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT ruta, fecha_inicial_datos
+        FROM archivos
+        WHERE tipo_archivo = 't2m'
+          AND fecha_inicial_datos <= %s
+          AND fecha_final_datos   >= %s
+        ORDER BY fecha_final_datos DESC
+        LIMIT 1
+    """, (fecha, fecha))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+
+    if not row:
+        return jsonify({'error': f'No hay datos de temperatura para {fecha}'}), 404
+
+    ruta_nc, fecha_ini = row
+
+    # 2) Calcular índice de tiempo (meses desde fecha_ini hasta fecha)
+    f_req = datetime.datetime.strptime(fecha,     "%Y-%m").date().replace(day=1)
+    f_ini = datetime.datetime.strptime(fecha_ini[:7], "%Y-%m").date().replace(day=1)
+    idx = (f_req.year - f_ini.year) * 12 + (f_req.month - f_ini.month)
+    if idx < 0:
+        return jsonify({'error': 'Fecha solicitada anterior al inicio de datos'}), 400
+
+    # 3) Obtener la geometría de la zona y reproyectar
+    zona_gdf = obtener_zona_gdf(zona, valor).to_crs(epsg=4326)
+
+    # 4) Calcular stats fuzzy
+    try:
+        stats = calcular_stats_fuzzy(zona_gdf, ruta_nc, idx, 't2m')
+        return jsonify(stats)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400

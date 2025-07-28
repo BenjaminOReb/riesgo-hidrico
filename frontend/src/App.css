@@ -178,3 +178,39 @@ input[type="file"] {
   box-sizing: border-box;
 }
 
+/* Modal overlay: fondo semitransparente y centrado */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0,0,0,0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+}
+
+/* Contenido del modal */
+.modal-content {
+  position: relative;
+  background: white;
+  border-radius: 8px;
+  padding: 1.5rem;
+  max-width: 90%;
+  max-height: 90%;
+  overflow: auto;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+}
+
+/* Botón cerrar */
+.modal-close {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  background: transparent;
+  border: none;
+  font-size: 1.25rem;
+  cursor: pointer;
+}
