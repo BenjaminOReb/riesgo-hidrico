@@ -59,63 +59,83 @@ def recortar_ultimos_5_anos(ruta_archivo, carpeta_salida="uploads/recortado"):
 
 
 def generar_capas_fuzzy(ruta_archivo, carpeta_salida="uploads/fuzzy"):
+  
     os.makedirs(carpeta_salida, exist_ok=True)
     ds = xr.open_dataset(ruta_archivo, decode_times=False)
-    # detecta variable
+
+    # 1) Detectar variable
     if 'pr' in ds.data_vars:
         var = 'pr'
     elif 't2m' in ds.data_vars:
         var = 't2m'
     else:
         raise ValueError("No se reconoce variable 'pr' o 't2m'")
-    da    = ds[var]
+
+    da = ds[var]
     datos = da.values.astype(float)  # (time, lat, lon)
-    # --- transformación log para pr ----
+
+    # 2) Para precipitación, usar log
     if var == 'pr':
-        datos = np.log10(np.where(np.isnan(datos), np.nan, datos) + 0.1)
+        datos = np.log10(datos + 0.1)
+
     T, Y, X = datos.shape
 
-    # rasteriza regiones
+    # 3) Rasterizar regiones
     regiones = gpd.read_file("shapefiles/regiones/Regional.shp").to_crs(epsg=4326)
     regiones['rid'] = np.arange(len(regiones))
-    lons = ds['lon'].values; lats = ds['lat'].values
-    transform = Affine.translation(lons[0]-0.25, lats[0]-0.25) * Affine.scale(0.05, 0.05)
+    lons, lats = ds['lon'].values, ds['lat'].values
+    transform = Affine.translation(lons[0] - 0.5* (lons[1]-lons[0]),
+                                   lats[0] - 0.5* (lats[1]-lats[0])) \
+                * Affine.scale(lons[1]-lons[0], lats[1]-lats[0])
+
     mask2d = features.rasterize(
-        [(geom, rid) for geom,rid in zip(regiones.geometry, regiones.rid)],
-        out_shape=(Y, X), transform=transform, fill=-1, dtype='int16'
+        [(g, rid) for g, rid in zip(regiones.geometry, regiones.rid)],
+        out_shape=(Y, X),
+        transform=transform,
+        fill=-1,
+        dtype='int16'
     )
 
-    baja_3d  = np.zeros_like(datos)
-    media_3d = np.zeros_like(datos)
-    alta_3d  = np.zeros_like(datos)
+    # 4) Inicializar con NaN (solo llenaremos dentro de cada región)
+    baja_3d  = np.full_like(datos, np.nan, dtype=float)
+    media_3d = np.full_like(datos, np.nan, dtype=float)
+    alta_3d  = np.full_like(datos, np.nan, dtype=float)
 
+    # 5) Calcular por región
     for rid in np.unique(mask2d):
-        if rid < 0: continue
-        mask3d = (mask2d == rid)[None,:,:]
+        if rid < 0:
+            continue
+        mask3d = (mask2d == rid)[None, :, :]
         mask3d = np.broadcast_to(mask3d, datos.shape)
+
         vals = datos[mask3d]
         vals = vals[~np.isnan(vals)]
-        if vals.size == 0: continue
+        if vals.size == 0:
+            continue
 
-        # usa percentiles para los trapézios
-        m, M = vals.min(), vals.max()
-        p10, p50, p90 = np.nanpercentile(vals, [10,50,90])
-        TL_low  = [m, m, p10,  p50]
-        TL_med  = [p10, p50, p50, p90]
-        TL_high = [p50, p90, M,   M]
+        m = float(vals.min())
+        M = float(vals.max())
+        L8 = (M - m) / 8.0
+        L2 = (M + m) / 2.0
 
-        uni      = np.linspace(m, M, 1000)
-        mf_low   = fuzz.trapmf(uni, TL_low)
-        mf_med   = fuzz.trapmf(uni, TL_med)
-        mf_high  = fuzz.trapmf(uni, TL_high)
+        # Ajusta estos parámetros si quieres otros perfiles
+        TL_low  = [m, m,       m + L8,   m + 3*L8]
+        TL_med  = [L2-3*L8, L2-L8, L2+L8, L2+3*L8]
+        TL_high = [M-3*L8,   M-L8,   M,      M]
 
-        # mascara región
-        regs = np.where(mask3d, datos, np.nan)
+        uni     = np.linspace(m, M, 1000)
+        mf_low  = fuzz.trapmf(uni, TL_low)
+        mf_med  = fuzz.trapmf(uni, TL_med)
+        mf_high = fuzz.trapmf(uni, TL_high)
+
+        regs = datos.copy()
+        regs[~mask3d] = np.nan
+
         baja_3d[mask3d]  = fuzz.interp_membership(uni, mf_low,  regs)[mask3d]
         media_3d[mask3d] = fuzz.interp_membership(uni, mf_med,  regs)[mask3d]
         alta_3d[mask3d]  = fuzz.interp_membership(uni, mf_high, regs)[mask3d]
 
-    # añade variables al dataset
+    # 6) Añadir al Dataset y exportar
     ds[f"{var}_baja"]  = (da.dims, baja_3d)
     ds[f"{var}_media"] = (da.dims, media_3d)
     ds[f"{var}_alta"]  = (da.dims, alta_3d)
@@ -130,7 +150,7 @@ def generar_capas_fuzzy(ruta_archivo, carpeta_salida="uploads/fuzzy"):
         'archivo_salida': ruta_salida,
         'tipo_variable': var,
         'nombre_base': nombre_base,
-        'mensaje': "Capas fuzzy calculadas por región (percentiles/log)."
+        'mensaje': "Capas fuzzy calculadas por región."
     }
 
 
