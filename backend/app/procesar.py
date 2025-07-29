@@ -106,33 +106,42 @@ def generar_capas_fuzzy(ruta_archivo, carpeta_salida="uploads/fuzzy"):
         dtype='int16'
     )
 
+    mask3d_invalid = np.broadcast_to(mask2d[None, :, :] == -1, datos.shape)
     # 5) Preparar arrays fuzzy
     baja  = np.zeros_like(datos);  baja [np.isnan(datos)] = np.nan
     media = np.zeros_like(datos); media[np.isnan(datos)] = np.nan
     alta  = np.zeros_like(datos);  alta [np.isnan(datos)] = np.nan
 
+    baja [mask3d_invalid] = np.nan
+    media[mask3d_invalid] = np.nan
+    alta [mask3d_invalid] = np.nan
+
     # 6) Calcular membresías
     for rid in np.unique(mask2d):
-        if rid < 0: continue
-        region_mask = (mask2d == rid)
-        mask3d = np.broadcast_to(region_mask[None], datos.shape)
-        valid = mask3d & (~np.isnan(datos))
-        if not valid.any(): continue
+        if rid < 0: 
+            continue
+        region_mask2d = (mask2d == rid)
 
-        vals = datos[valid]
-        m, M = float(vals.min()), float(vals.max())
-        L8 = (M - m)/8.0
-        L2 = (M + m)/2.0
-        uni = np.linspace(m, M, 1000)
+        for t in range(T):
+            datos_t    = datos[t, :, :]
+            valid_mask = region_mask2d & ~np.isnan(datos_t)
+            if not valid_mask.any():
+                continue
 
-        mf_low  = fuzz.trapmf(uni, [m,    m,    m+L8,   m+3*L8])
-        mf_med  = fuzz.trapmf(uni, [L2-3*L8, L2-L8, L2+L8, L2+3*L8])
-        mf_high = fuzz.trapmf(uni, [M-3*L8,   M-L8,   M,      M])
+            vals = datos_t[valid_mask]          # ¡solo este mes!
+            m, M = float(vals.min()), float(vals.max())
+            L8   = (M - m) / 8.0
+            L2   = (M + m) / 2.0
+            uni  = np.linspace(m, M, 1000)
 
-        v = datos[valid]
-        baja [valid] = fuzz.interp_membership(uni, mf_low,  v)
-        media[valid] = fuzz.interp_membership(uni, mf_med,  v)
-        alta [valid] = fuzz.interp_membership(uni, mf_high, v)
+            mf_low  = fuzz.trapmf(uni, [m,    m,    m+L8,   m+3*L8])
+            mf_med  = fuzz.trapmf(uni, [L2-3*L8, L2-L8, L2+L8, L2+3*L8])
+            mf_high = fuzz.trapmf(uni, [M-3*L8,   M-L8,   M,      M])
+
+            v = datos_t[valid_mask]
+            baja [t, valid_mask] = fuzz.interp_membership(uni, mf_low,  v)
+            media[t, valid_mask] = fuzz.interp_membership(uni, mf_med,  v)
+            alta [t, valid_mask] = fuzz.interp_membership(uni, mf_high, v)
 
     # 7) Voltear arrays si la rejilla original está invertida
     #    latitudes
