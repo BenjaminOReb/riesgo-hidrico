@@ -45,21 +45,35 @@ def cargar_jerarquia_ubicaciones(ruta_shapefile='shapefiles/comunas/comunas.shp'
     return jerarquia
 
 def obtener_zona_gdf(zona, valor):
-   
-    # Lee el shapefile de comuna/provincia/región y filtra por valor (case-insensitive).
+    
+    # Lee el shapefile correspondiente a la zona (comuna/provincia/región/pais)
+    # y devuelve un GeoDataFrame con la(s) geometría(s) filtrada(s).
     
     z = zona.strip().lower()
     if z == 'comuna':
         gdf = gpd.read_file("shapefiles/comunas/comunas.shp")
-        gdf = gdf[gdf["Comuna"].str.strip().str.lower() == valor.strip().lower()]
+        mask = gdf["Comuna"].str.strip().str.lower() == valor.strip().lower()
+        gdf = gdf[mask]
     elif z == 'provincia':
         gdf = gpd.read_file("shapefiles/provincias/Provincias.shp")
-        gdf = gdf[gdf["Provincia"].str.strip().str.lower() == valor.strip().lower()]
+        mask = gdf["Provincia"].str.strip().str.lower() == valor.strip().lower()
+        gdf = gdf[mask]
     elif z == 'region':
         gdf = gpd.read_file("shapefiles/regiones/Regional.shp")
-        gdf = gdf[gdf["Region"].str.strip().str.lower() == valor.strip().lower()]
+        mask = gdf["Region"].str.strip().str.lower() == valor.strip().lower()
+        gdf = gdf[mask]
+    elif z == 'pais':
+        regiones = gpd.read_file("shapefiles/regiones/Regional.shp").to_crs(epsg=4326)
+        union_geom = regiones.geometry.unary_union
+        # Indicamos explícitamente que 'union_geom' es la geometría:
+        return gpd.GeoDataFrame(
+            {'geometry': [union_geom]},
+            geometry='geometry',
+            crs="EPSG:4326"
+        )
     else:
         raise ValueError(f"Zona inválida: {zona}")
+
     if gdf.empty:
         raise ValueError(f"No se encontró {zona} con nombre '{valor}'")
-    return gdf
+    return gdf.to_crs(epsg=4326)

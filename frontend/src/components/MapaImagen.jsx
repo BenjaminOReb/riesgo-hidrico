@@ -105,14 +105,25 @@ export default function MapaImagen({ tipo, zona, valor, fecha }) {
         } else {
           entry.map.eachLayer(l => { if (!(l instanceof L.TileLayer)) entry.map.removeLayer(l); });
         }
-        new GeoRasterLayer({ georaster: raster, opacity: 0.8, resolution: 128, pixelValuesToColorFn: colorFn }).addTo(entry.map);
+        new GeoRasterLayer({ georaster: raster, opacity: 0.8, resolution: 64, pixelValuesToColorFn: colorFn }).addTo(entry.map);
 
-        const zonaParam = zona === "comuna" ? `comuna=${encodeURIComponent(valor)}`
-                          : zona === "provincia" ? `provincia=${encodeURIComponent(valor)}`
-                          : `region=${encodeURIComponent(valor)}`;
-        const gj = await fetch(`${API_BASE}/api/geojson?${zonaParam}`).then(r => r.json());
-        const zoneLayer = L.geoJSON(gj, { style: { color: "#3f3f40", weight: 0.8, fillOpacity: 0 } }).addTo(entry.map);
-        if (zoneLayer.getBounds().isValid()) entry.map.fitBounds(zoneLayer.getBounds(), { padding: [20,20], maxZoom:10 });
+        const zonaParam =
+          zona === "pais"
+            ? `pais=${encodeURIComponent(valor)}`
+            : zona === "comuna"
+              ? `comuna=${encodeURIComponent(valor)}`
+              : zona === "provincia"
+                ? `provincia=${encodeURIComponent(valor)}`
+                : `region=${encodeURIComponent(valor)}`;
+
+        const gj = await fetch(`${API_BASE}/api/geojson?${zonaParam}`)
+          .then(r => r.json());
+        const zoneLayer = L.geoJSON(gj, {
+          style: { color: "#3f3f40", weight: 0.8, fillOpacity: 0 }
+        }).addTo(entry.map);
+        if (zoneLayer.getBounds().isValid()) {
+          entry.map.fitBounds(zoneLayer.getBounds(), { padding: [20,20], maxZoom:10 });
+        }
 
         if (entry.legend) { entry.map.removeControl(entry.legend); entry.legend = null; }
         const legend = L.control({ position: "bottomright" });
@@ -169,15 +180,24 @@ export default function MapaImagen({ tipo, zona, valor, fecha }) {
         </div>
       )}
 
-      <div style={{ display: "flex", flexWrap: "wrap", gap: "1rem" }}>
+      <div
+        style={{
+          display:   "flex",
+          flexWrap:  "nowrap",   // fuerza una sola línea
+          gap:       "0.5rem",   // un poco de espacio entre paneles
+          overflowX: "auto"      // scroll horizontal si no caben todos
+        }}
+      >
         {capas.map(({ key }) => (
           <div
             key={key}
             id={`map-${key}`}
             style={{
-              flex: tipo === "riesgo" ? 1 : "1 1 calc(50% - .5rem)",
-              height: "400px",
-              border: "1px solid #ddd"
+              flex:      "1 1 calc(25% - 0.5rem)", // 4 columnas iguales
+              minWidth:  "200px",                  // anchura mínima
+              height:    "650px",                  // altura mayor
+              border:    "1px solid #ddd",
+              boxSizing: "border-box"
             }}
           />
         ))}
@@ -199,7 +219,7 @@ export default function MapaImagen({ tipo, zona, valor, fecha }) {
         onClose={() => setModalOpen(false)}
         fetchUrl={statsUrl}
         title={`${
-          tipo === "precipitacion" ? "Precipitación" : "temperatura"
+          tipo === "precipitacion" ? "Precipitación" : "Temperatura"
         } — ${valor} (${fecha})`}
       />
     </div>

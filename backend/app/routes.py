@@ -8,6 +8,9 @@ import traceback
 import datetime
 import tempfile
 import uuid
+from shapely.geometry import box
+import geopandas as gpd
+
 from app.database import get_connection
 from app.ubicaciones import (
     cargar_jerarquia_ubicaciones,
@@ -780,13 +783,14 @@ def servir_temperatura_alta_fuzzy_geotiff():
 
 @routes.route('/api/geojson', methods=['GET'])
 def geojson_zona():
-
-    # Devuelve el GeoJSON de la zona indicada (comuna, provincia o región),
-    # listo para dibujar en el mapa.
-
-    comuna = request.args.get('comuna')
+    """
+    Devuelve el GeoJSON de la zona indicada (comuna, provincia, región o país),
+    listo para dibujar en el mapa.
+    """
+    comuna    = request.args.get('comuna')
     provincia = request.args.get('provincia')
-    region = request.args.get('region')
+    region    = request.args.get('region')
+    pais      = request.args.get('pais')
 
     try:
         if comuna:
@@ -795,16 +799,26 @@ def geojson_zona():
             gdf = obtener_zona_gdf('provincia', provincia)
         elif region:
             gdf = obtener_zona_gdf('region', region)
+        elif pais is not None:
+            # Creamos un geo-dataframe con el bounding box de todas las regiones
+            regiones = gpd.read_file("shapefiles/regiones/Regional.shp") \
+                          .to_crs(epsg=4326)
+            minx, miny, maxx, maxy = regiones.total_bounds
+            bbox = box(minx, miny, maxx, maxy)
+            gdf = gpd.GeoDataFrame(
+                {'geometry': [bbox]},
+                geometry='geometry',
+                crs="EPSG:4326"
+            )
         else:
-            return jsonify({'error': 'Falta un parámetro: comuna, provincia o region'}), 400
+            return jsonify({'error': 'Falta un parámetro: comuna, provincia, region o pais'}), 400
 
-        # Convierte a GeoJSON y luego a dict para jsonify
+        # Serializamos a GeoJSON
         geojson_str = gdf.to_crs(epsg=4326).to_json()
-        geojson_obj = json.loads(geojson_str) 
+        geojson_obj = json.loads(geojson_str)
         return jsonify(geojson_obj)
 
     except Exception as e:
-        import traceback
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
@@ -1005,7 +1019,6 @@ def api_precipitacion_fuzzy_stats():
         return jsonify(stats)
     except Exception as e:
         return jsonify({'error': str(e)}), 400
-
 
 @routes.route('/api/temperatura-fuzzy-stats', methods=['GET'])
 def api_temperatura_fuzzy_stats():

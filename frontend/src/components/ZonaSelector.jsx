@@ -11,8 +11,8 @@ import { useState, useEffect } from 'react';
  */
 
 function ZonaSelector({ onSeleccionar }) {
-  // Estado para el nivel de zona seleccionado (comuna/provincia/región)
-  const [zona, setZona] = useState('comuna');
+  // Estado para el nivel de zona seleccionado (comuna/provincia/región/país)
+  const [zona, setZona] = useState('pais');
   // Estado para almacenar la jerarquía completa de ubicaciones obtenida del backend
   const [ubicaciones, setUbicaciones] = useState({});
   // Estado para la lista de opciones (nombres) según el nivel 'zona'
@@ -32,28 +32,34 @@ function ZonaSelector({ onSeleccionar }) {
   useEffect(() => {
     const nuevasOpciones = [];
 
-    if (zona === 'region') {
-      // Para regiones, las claves de primer nivel de 'ubicaciones'
+    if (zona === 'pais') {
+      nuevasOpciones.push("Chile");
+    }
+    else if (zona === 'region') {
       nuevasOpciones.push(...Object.keys(ubicaciones));
-    } else if (zona === 'provincia') {
-      // Para provincias, recorrer cada región y acumular sus provincias
+    }
+    else if (zona === 'provincia') {
       Object.values(ubicaciones).forEach(provinciasObj => {
         nuevasOpciones.push(...Object.keys(provinciasObj));
       });
-    } else if (zona === 'comuna') {
-      // Para comunas, recorrer regiones → provincias → comunas
-      Object.values(ubicaciones).forEach(provinciasObj => {
-        Object.values(provinciasObj).forEach(comunasArray => {
+    }
+    else if (zona === 'comuna') {
+      Object.values(ubicaciones).forEach(provObj => {
+        Object.values(provObj).forEach(comunasArray => {
           nuevasOpciones.push(...comunasArray);
         });
       });
     }
 
-    // Ordenar alfabéticamente y actualizar el estado
+    // Ordenar y actualizar la lista de valores
     setValores(nuevasOpciones.sort());
-    // Reiniciar la selección de valor concreto
-    setValorSeleccionado('');
+
+    // Sólo preseleccionamos "Chile" si estamos en zona "pais"
+    if (zona === 'pais') {
+      setValorSeleccionado('Chile');
+    } 
   }, [zona, ubicaciones]);
+
 
   // Al pulsar el botón, notificar al componente padre de la selección
   const handleEnviar = () => {
@@ -67,6 +73,7 @@ function ZonaSelector({ onSeleccionar }) {
       <label>
         Zona:&nbsp;
         <select value={zona} onChange={e => setZona(e.target.value)}>
+          <option value="pais">Chile</option>
           <option value="comuna">Comuna</option>
           <option value="provincia">Provincia</option>
           <option value="region">Región</option>
@@ -75,20 +82,30 @@ function ZonaSelector({ onSeleccionar }) {
       &nbsp;&nbsp;
       <label>
         Valor:&nbsp;
-        <select
-          value={valorSeleccionado}
-          onChange={e => setValorSeleccionado(e.target.value)}
-        >
-          <option value="">-- Seleccionar --</option>
-          {valores.map((v, idx) => (
-            <option key={idx} value={v}>
-              {v}
-            </option>
-          ))}
-        </select>
+        {zona === 'pais' ? (
+          // Cuando es país, no hay lista: solo mostramos el texto
+          <input type="text" readOnly value="Chile" style={{ width: '8rem' }} />
+        ) : (
+          // Para cualquier otra zona, el dropdown habitual
+          <select
+            value={valorSeleccionado}
+            onChange={e => setValorSeleccionado(e.target.value)}
+          >
+            <option value="">-- Seleccionar --</option>
+            {valores.map((v, idx) => (
+              <option key={idx} value={v}>
+                {v}
+              </option>
+            ))}
+          </select>
+        )}
       </label>
       &nbsp;&nbsp;
-      <button onClick={handleEnviar} disabled={!valorSeleccionado}>
+      <button
+        onClick={handleEnviar}
+        // Si es país, siempre hay valor (Chile); en otro caso debe elegirse uno
+        disabled={zona !== 'pais' && !valorSeleccionado}
+      >
         Ver en mapa
       </button>
     </div>
