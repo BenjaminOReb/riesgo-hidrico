@@ -2,14 +2,14 @@ import React, { useState, useEffect } from "react";
 import ReactDOM from "react-dom";
 import ReactApexChart from "react-apexcharts";
 
-export default function LinguisticModal({ isOpen, onClose, fetchUrl, title }) {
+export default function LinguisticModal({ isOpen, onClose, fetchUrl, title, isTemp }) {
   // Inferimos la unidad en cada render
-  const isTemp = /temperatura/i.test(fetchUrl);
   const unit   = isTemp ? " °C" : " mm";
 
   const [series, setSeries] = useState([]);
   const [options, setOptions] = useState({
     chart: { type: "line", toolbar: { show: false } },
+    colors: ["#08306b", "#fed976", "#bd0026"],
     title: { show: false },
     xaxis: {
       type: "numeric",
@@ -31,56 +31,108 @@ export default function LinguisticModal({ isOpen, onClose, fetchUrl, title }) {
     }
   });
 
-  // 1) Si cambia la unidad (i.e. fetchUrl), actualizamos los formatters
-  useEffect(() => {
-    if (!isOpen) return;
-    setOptions(o => ({
-      ...o,
-      xaxis: {
-        ...o.xaxis,
-        labels: { formatter: val => `${val.toFixed(2)}${unit}` }
-      },
-      tooltip: {
-        ...o.tooltip,
-        x: { formatter: val => `${val.toFixed(2)}${unit}` }
-      }
-    }));
-  }, [unit, isOpen]);
+  const letters = ["a","b","c","d"];
 
-  // 2) Efecto de carga de datos (igual que antes), pero ahora options ya escucha unit
   useEffect(() => {
     if (!isOpen) return;
+
     fetch(fetchUrl)
       .then(res => {
         if (!res.ok) return res.json().then(e => { throw new Error(e.error) });
         return res.json();
       })
       .then(({ categories, baja, media, alta }) => {
+        // 1) Computar índices a, b, c, d
+        const computeABCD = arr => {
+          const eps = 1e-6;
+          const aIdx = arr.findIndex(v => v > eps);
+          const dIdx = arr.length - 1 - [...arr].reverse().findIndex(v => v > eps);
+          const bIdx = arr.findIndex(v => v >= 1 - eps);
+          const cIdx = arr.length - 1 - [...arr].reverse().findIndex(v => v >= 1 - eps);
+          return [aIdx, bIdx, cIdx, dIdx];
+        };
+        const lowIdxs  = computeABCD(baja);
+        const medIdxs  = computeABCD(media);
+        const highIdxs = computeABCD(alta);
+
+        // 2) Generar annotations y marcadores discretos con offset
+        const annotations = [];
+        const discreteMarkers = [];
+
+        [[lowIdxs, "#08306b"], [medIdxs, "#fed976"], [highIdxs, "#bd0026"]]
+          .forEach(([idxs, color], seriesIndex) => {
+            idxs.forEach((dpIdx, i) => {
+              const x = categories[dpIdx];
+              // desplazamiento vertical según la posición en [a,b,c,d]
+              const offsetY = (i * 20) + 30;
+
+              annotations.push({
+                x,
+                borderColor: color,
+                strokeDashArray: 4,
+                label: {
+                  text: `${letters[i]}=${x.toFixed(2)}${unit}`,
+                  style: { color, background: "#fff" },
+                  orientation: "horizontal",
+                  position: "top",
+                  offsetY
+                }
+              });
+
+              discreteMarkers.push({
+                seriesIndex,
+                dataPointIndex: dpIdx,
+                fillColor: color,
+                strokeColor: color,
+                size: 6
+              });
+            });
+          });
+
+        // 3) Fijar series y actualizar opciones
         setSeries([
-          { name: "Baja",  data: categories.map((c,i) => [c, baja[i]]) },
-          { name: "Media", data: categories.map((c,i) => [c, media[i]]) },
-          { name: "Alta",  data: categories.map((c,i) => [c, alta[i]]) }
+          { name: "Baja",  data: categories.map((c, i) => [c, baja[i]]) },
+          { name: "Media", data: categories.map((c, i) => [c, media[i]]) },
+          { name: "Alta",  data: categories.map((c, i) => [c, alta[i]]) }
         ]);
+
         setOptions(o => ({
           ...o,
           xaxis: {
             ...o.xaxis,
             min: categories[0],
-            max: categories[categories.length-1]
-          }
+            max: categories[categories.length - 1]
+          },
+          annotations: { xaxis: annotations },
+          markers: { ...o.markers, discrete: discreteMarkers }
         }));
       })
       .catch(err => console.error("Error stats fuzzy:", err.message));
-  }, [isOpen, fetchUrl]);
+  }, [isOpen, fetchUrl, unit]);
 
   if (!isOpen) return null;
 
   return ReactDOM.createPortal(
     <div className="modal-overlay">
-      <div className="modal-content">
+      <div
+        className="modal-content"
+        style={{
+          maxWidth: '90vw',
+          width: '800px',
+          padding: '1rem'
+        }}
+      >
         <button className="modal-close" onClick={onClose}>✕</button>
-        <h2>{title.charAt(0).toUpperCase() + title.slice(1)}</h2>
-        <ReactApexChart options={options} series={series} type="line" height={350} />
+        <h2 style={{ textAlign: 'center' }}>
+          {title.charAt(0).toUpperCase() + title.slice(1)}
+        </h2>
+        <ReactApexChart
+          options={options}
+          series={series}
+          type="line"
+          height={350}
+          width="100%"
+        />
       </div>
     </div>,
     document.body

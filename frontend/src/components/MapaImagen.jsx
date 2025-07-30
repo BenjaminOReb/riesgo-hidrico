@@ -215,12 +215,12 @@ export default function MapaImagen({ tipo, zona, valor, fecha }) {
       )}
 
       <LinguisticModal
+        key={tipo /* o key={unit} */}
         isOpen={modalOpen}
         onClose={() => setModalOpen(false)}
         fetchUrl={statsUrl}
-        title={`${
-          tipo === "precipitacion" ? "Precipitación" : "Temperatura"
-        } — ${valor} (${fecha})`}
+        isTemp={tipo === "temperatura"}
+        title={`${tipo === "precipitacion" ? "Precipitación" : "Temperatura"} — ${valor} (${fecha})`}
       />
     </div>
   );
