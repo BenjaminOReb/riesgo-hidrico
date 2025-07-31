@@ -784,15 +784,22 @@ def servir_temperatura_alta_fuzzy_geotiff():
 @routes.route('/api/geojson', methods=['GET'])
 def geojson_zona():
     """
-    Devuelve el GeoJSON de la zona indicada (comuna, provincia, región o país),
-    listo para dibujar en el mapa.
+    Devuelve el GeoJSON de la zona indicada (comuna, provincia, región,
+    macro-zona norte/centro/sur o país).
     """
     comuna    = request.args.get('comuna')
     provincia = request.args.get('provincia')
     region    = request.args.get('region')
     pais      = request.args.get('pais')
+    norte     = request.args.get('norte')
+    centro    = request.args.get('centro')
+    sur       = request.args.get('sur')
 
     try:
+        # Leemos todas las regiones y pasamos a EPSG:4326
+        regiones = gpd.read_file("shapefiles/regiones/Regional.shp") \
+                      .to_crs(epsg=4326)
+
         if comuna:
             gdf = obtener_zona_gdf('comuna', comuna)
         elif provincia:
@@ -800,9 +807,7 @@ def geojson_zona():
         elif region:
             gdf = obtener_zona_gdf('region', region)
         elif pais is not None:
-            # Creamos un geo-dataframe con el bounding box de todas las regiones
-            regiones = gpd.read_file("shapefiles/regiones/Regional.shp") \
-                          .to_crs(epsg=4326)
+            # Todo Chile: usamos el bounding‐box completo
             minx, miny, maxx, maxy = regiones.total_bounds
             bbox = box(minx, miny, maxx, maxy)
             gdf = gpd.GeoDataFrame(
@@ -810,15 +815,66 @@ def geojson_zona():
                 geometry='geometry',
                 crs="EPSG:4326"
             )
+        elif norte is not None:
+            # Norte: Arica→Coquimbo
+            norte_list = [
+              "Región de Arica y Parinacota",
+              "Región de Tarapacá",
+              "Región de Antofagasta",
+              "Región de Atacama",
+              "Región de Coquimbo"
+            ]
+            sel = regiones[regiones["Region"].isin(norte_list)]
+            union = sel.geometry.unary_union
+            gdf = gpd.GeoDataFrame(
+                {'geometry': [union]},
+                geometry='geometry',
+                crs="EPSG:4326"
+            )
+        elif centro is not None:
+            # Centro: Valparaíso→Ñuble→Bío-Bío
+            centro_list = [
+              "Región de Valparaíso",
+              "Región Metropolitana de Santiago",
+              "Región del Libertador Bernardo O'Higgins",
+              "Región del Maule",
+              "Región de Ñuble",
+              "Región del Bío-Bío"
+            ]
+            sel = regiones[regiones["Region"].isin(centro_list)]
+            union = sel.geometry.unary_union
+            gdf = gpd.GeoDataFrame(
+                {'geometry': [union]},
+                geometry='geometry',
+                crs="EPSG:4326"
+            )
+        elif sur is not None:
+            # Sur: La Araucanía→Magallanes
+            sur_list = [
+              "Región de La Araucanía",
+              "Región de Los Ríos",
+              "Región de Los Lagos",
+              "Región de Aysén del Gral.Ibañez del Campo",
+              "Región de Magallanes y Antártica Chilena"
+            ]
+            sel = regiones[regiones["Region"].isin(sur_list)]
+            union = sel.geometry.unary_union
+            gdf = gpd.GeoDataFrame(
+                {'geometry': [union]},
+                geometry='geometry',
+                crs="EPSG:4326"
+            )
         else:
-            return jsonify({'error': 'Falta un parámetro: comuna, provincia, region o pais'}), 400
+            return jsonify({
+                'error': 'Falta un parámetro: comuna, provincia, region, pais, norte, centro o sur'
+            }), 400
 
-        # Serializamos a GeoJSON
+        # Serializamos el GeoDataFrame resultante a GeoJSON
         geojson_str = gdf.to_crs(epsg=4326).to_json()
-        geojson_obj = json.loads(geojson_str)
-        return jsonify(geojson_obj)
+        return jsonify(json.loads(geojson_str))
 
     except Exception as e:
+        import traceback
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 

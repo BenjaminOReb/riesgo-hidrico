@@ -44,36 +44,89 @@ def cargar_jerarquia_ubicaciones(ruta_shapefile='shapefiles/comunas/comunas.shp'
 
     return jerarquia
 
+import geopandas as gpd
+
 def obtener_zona_gdf(zona, valor):
-    
-    # Lee el shapefile correspondiente a la zona (comuna/provincia/región/pais)
-    # y devuelve un GeoDataFrame con la(s) geometría(s) filtrada(s).
-    
+    """
+    Lee el shapefile correspondiente a la zona (comuna/provincia/región/pais/norte/centro/sur)
+    y devuelve un GeoDataFrame con la(s) geometría(s) filtrada(s).
+    """
     z = zona.strip().lower()
-    if z == 'comuna':
-        gdf = gpd.read_file("shapefiles/comunas/comunas.shp")
-        mask = gdf["Comuna"].str.strip().str.lower() == valor.strip().lower()
-        gdf = gdf[mask]
-    elif z == 'provincia':
-        gdf = gpd.read_file("shapefiles/provincias/Provincias.shp")
-        mask = gdf["Provincia"].str.strip().str.lower() == valor.strip().lower()
-        gdf = gdf[mask]
-    elif z == 'region':
-        gdf = gpd.read_file("shapefiles/regiones/Regional.shp")
-        mask = gdf["Region"].str.strip().str.lower() == valor.strip().lower()
-        gdf = gdf[mask]
-    elif z == 'pais':
+
+    # 1) Casos puntuales: país, zonas
+    if z == 'pais':
+        # Unimos todas las regiones
         regiones = gpd.read_file("shapefiles/regiones/Regional.shp").to_crs(epsg=4326)
         union_geom = regiones.geometry.unary_union
-        # Indicamos explícitamente que 'union_geom' es la geometría:
         return gpd.GeoDataFrame(
             {'geometry': [union_geom]},
             geometry='geometry',
             crs="EPSG:4326"
         )
+
+    # Definimos listas de nombres de región para cada “zona”
+    REG_NORTE = [
+        "Región de Arica y Parinacota",
+        "Región de Tarapacá",
+        "Región de Antofagasta",
+        "Región de Atacama",
+        "Región de Coquimbo"
+    ]
+    REG_CENTRO = [
+        "Región de Valparaíso",
+        "Región Metropolitana de Santiago",
+        "Región del Libertador Bernardo O'Higgins",
+        "Región del Maule",
+        "Región de Ñuble",
+        "Región del Bío-Bío",
+    ]
+    REG_SUR = [
+        "Región de La Araucanía",
+        "Región de Los Ríos",
+        "Región de Los Lagos",
+        "Región de Aysén del Gral.Ibañez del Campo",
+        "Región de Magallanes y Antártica Chilena",
+        "Zona sin demarcar"
+    ]
+
+    if z in ('norte', 'centro', 'sur'):
+        regiones = gpd.read_file("shapefiles/regiones/Regional.shp").to_crs(epsg=4326)
+        if z == 'norte':
+            sel = regiones[regiones["Region"].isin(REG_NORTE)]
+        elif z == 'centro':
+            sel = regiones[regiones["Region"].isin(REG_CENTRO)]
+        else:  # sur
+            sel = regiones[regiones["Region"].isin(REG_SUR)]
+
+        if sel.empty:
+            raise ValueError(f"No se encontraron regiones para la zona '{zona}'")
+
+        union_geom = sel.geometry.unary_union
+        return gpd.GeoDataFrame(
+            {'geometry': [union_geom]},
+            geometry='geometry',
+            crs="EPSG:4326"
+        )
+
+    # 2) Casos por nombre: comuna, provincia, región
+    if z == 'comuna':
+        shp = "shapefiles/comunas/comunas.shp"
+        campo = "Comuna"
+    elif z == 'provincia':
+        shp = "shapefiles/provincias/Provincias.shp"
+        campo = "Provincia"
+    elif z == 'region':
+        shp = "shapefiles/regiones/Regional.shp"
+        campo = "Region"
     else:
         raise ValueError(f"Zona inválida: {zona}")
 
+    gdf = gpd.read_file(shp)
+    mask = gdf[campo].str.strip().str.lower() == valor.strip().lower()
+    gdf = gdf[mask]
+
     if gdf.empty:
         raise ValueError(f"No se encontró {zona} con nombre '{valor}'")
+
     return gdf.to_crs(epsg=4326)
+
