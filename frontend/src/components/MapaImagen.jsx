@@ -15,70 +15,72 @@ const colorRamp = [
 
 export default function MapaImagen({ tipo, zona, valor, fecha }) {
   const [verPromedio, setVerPromedio] = useState(false);
-  const [modalOpen, setModalOpen] = useState(false);
+  const [modalOpen,  setModalOpen]  = useState(false);
+  const mapRefs = useRef({}); // { key: { map, legend } }
 
-  // Cada entry en mapRefs.current es { map: LeafletMap, legend: Control }
-  const mapRefs = useRef({});
-
-  // 1) Limpieza cuando cambie el tipo de mapa
+  // 1) Limpiar mapas cuando cambie el tipo
   useEffect(() => {
     Object.values(mapRefs.current).forEach(({ map, legend }) => {
-      if (legend) map.removeControl(legend);
+      legend && map.removeControl(legend);
       map.remove();
     });
     mapRefs.current = {};
   }, [tipo]);
 
-  // 2) Función de color estándar (0–1)
-  const pixelValuesToColorFn = val => {
-    if (val == null || isNaN(val)) return null;
-    const idx = Math.floor(val * 10);
-    return colorRamp[Math.min(Math.max(idx, 0), 9)];
+  // 2) Colorfn genérico 0–1
+  const pixelValuesToColorFn = v => {
+    if (v == null || isNaN(v)) return null;
+    return colorRamp[Math.min(9, Math.floor(v*10))];
   };
 
-  // 3) Preparo array de capas según tipo y verPromedio
+  // 3) URLs de capas
   const capas = useMemo(() => {
     const enc = encodeURIComponent;
     const urls = [];
-    switch (tipo) {
-      case "riesgo":
-        if (verPromedio) {
-          urls.push({ key: "normal", url: `${API_BASE}/api/promedio-riesgo-raw-zona?zona=${zona}&valor=${enc(valor)}` });
-          urls.push({ key: "fuzzy", url: `${API_BASE}/api/promedio-riesgo-fuzzy-zona?zona=${zona}&valor=${enc(valor)}` });
-        } else {
-          urls.push({ key: "normal", url: `${API_BASE}/api/riesgo-raw-geotiff?zona=${zona}&valor=${enc(valor)}&fecha=${fecha}` });
-          urls.push({ key: "fuzzy", url: `${API_BASE}/api/riesgo-fuzzy-geotiff?zona=${zona}&valor=${enc(valor)}&fecha=${fecha}` });
-        }
-        break;
-      case "precipitacion":
-        urls.push({ key: "normal", url: `${API_BASE}/api/precipitacion-geotiff?zona=${zona}&valor=${enc(valor)}&fecha=${fecha}` });
-        urls.push({ key: "baja",   url: `${API_BASE}/api/precipitacion-baja-fuzzy-geotiff?zona=${zona}&valor=${enc(valor)}&fecha=${fecha}` });
-        urls.push({ key: "media",  url: `${API_BASE}/api/precipitacion-media-fuzzy-geotiff?zona=${zona}&valor=${enc(valor)}&fecha=${fecha}` });
-        urls.push({ key: "alta",   url: `${API_BASE}/api/precipitacion-alta-fuzzy-geotiff?zona=${zona}&valor=${enc(valor)}&fecha=${fecha}` });
-        break;
-      case "temperatura":
-        urls.push({ key: "normal", url: `${API_BASE}/api/temperatura-geotiff?zona=${zona}&valor=${enc(valor)}&fecha=${fecha}` });
-        urls.push({ key: "baja",   url: `${API_BASE}/api/temperatura-baja-fuzzy-geotiff?zona=${zona}&valor=${enc(valor)}&fecha=${fecha}` });
-        urls.push({ key: "media",  url: `${API_BASE}/api/temperatura-media-fuzzy-geotiff?zona=${zona}&valor=${enc(valor)}&fecha=${fecha}` });
-        urls.push({ key: "alta",   url: `${API_BASE}/api/temperatura-alta-fuzzy-geotiff?zona=${zona}&valor=${enc(valor)}&fecha=${fecha}` });
-        break;
-      default:
-        console.error(`Tipo de mapa desconocido: ${tipo}`);
+    if (tipo === "riesgo") {
+      if (verPromedio) {
+        urls.push({ key:"normal", url:`${API_BASE}/api/promedio-riesgo-raw-zona?zona=${zona}&valor=${enc(valor)}` });
+        urls.push({ key:"fuzzy",  url:`${API_BASE}/api/promedio-riesgo-fuzzy-zona?zona=${zona}&valor=${enc(valor)}` });
+      } else {
+        urls.push({ key:"normal", url:`${API_BASE}/api/riesgo-raw-geotiff?zona=${zona}&valor=${enc(valor)}&fecha=${fecha}` });
+        urls.push({ key:"fuzzy",  url:`${API_BASE}/api/riesgo-fuzzy-geotiff?zona=${zona}&valor=${enc(valor)}&fecha=${fecha}` });
+      }
+    }
+    if (tipo === "precipitacion"|| tipo==="temperatura") {
+      const base = tipo==="precipitacion"? "precipitacion" : "temperatura";
+      urls.push({ key:"normal", url:`${API_BASE}/api/${base}-geotiff?zona=${zona}&valor=${enc(valor)}&fecha=${fecha}` });
+      ["baja","media","alta"].forEach(level => {
+        urls.push({
+          key: level,
+          url: `${API_BASE}/api/${base}-${level}-fuzzy-geotiff?zona=${zona}&valor=${enc(valor)}&fecha=${fecha}`
+        });
+      });
     }
     return urls;
   }, [tipo, zona, valor, fecha, verPromedio]);
 
-  // 4) Etiquetas por capa
+  // 4) Etiquetas
   const labelMap = useMemo(() => {
-    if (tipo === "riesgo") return { normal: "Riesgo crudo", fuzzy: "Riesgo fuzzy" };
-    if (tipo === "precipitacion") return { normal: "Precipitación (mm)", baja: "GP Prec. Baja", media: "GP Prec. Media", alta: "GP Prec. Alta" };
-    if (tipo === "temperatura") return { normal: "Temperatura (°C)", baja: "GP Temp. Baja", media: "GP Temp. Media", alta: "GP Temp. Alta" };
+    if (tipo === "riesgo") return { normal:"Riesgo crudo", fuzzy:"Riesgo fuzzy" };
+    if (tipo === "precipitacion") return {
+      normal:"Precipitación (mm)",
+      baja:  "GP Prec. Baja",
+      media: "GP Prec. Media",
+      alta:  "GP Prec. Alta"
+    };
+    if (tipo === "temperatura") return {
+      normal:"Temperatura (°C)",
+      baja:  "GP Temp. Baja",
+      media: "GP Temp. Media",
+      alta:  "GP Temp. Alta"
+    };
     return {};
   }, [tipo]);
 
-  // 5) Inicializar/Actualizar cada capa
+  // 5) Renderizar cada capa
   useEffect(() => {
     if (!capas.length) return;
+
     capas.forEach(({ key, url }) => {
       (async () => {
         const res = await fetch(url);
@@ -86,116 +88,147 @@ export default function MapaImagen({ tipo, zona, valor, fecha }) {
         const buf = await res.arrayBuffer();
         const raster = await georaster(buf);
 
+        // colorfn dinámico si no es riesgo crudo
         let colorFn = pixelValuesToColorFn;
-        if (key === "normal" && tipo !== "riesgo") {
-          const min = raster.mins[0], max = raster.maxs[0], step = (max - min) / 10;
+        if (key==="normal" && tipo!=="riesgo") {
+          const [min,max] = [raster.mins[0], raster.maxs[0]];
           colorFn = v => {
-            if (v == null || isNaN(v)) return null;
-            const t = (v - min) / (max - min), idx = Math.floor(t * 10);
-            return colorRamp[Math.min(Math.max(idx, 0), 9)];
+            if (v==null||isNaN(v)) return null;
+            return colorRamp[Math.min(9,Math.floor((v-min)/(max-min)*10))];
           };
         }
 
+        // init / limpiar mapa
         let entry = mapRefs.current[key];
         if (!entry) {
-          const map = L.map(`map-${key}`, { zoomControl: true, maxZoom: 13, minZoom: 4 })
-                       .setView([-30, -70], 5);
-          L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "© OpenStreetMap contributors" }).addTo(map);
-          entry = mapRefs.current[key] = { map, legend: null };
+          const map = L.map(`map-${key}`, { zoomControl:true, maxZoom:13, minZoom:4 })
+                     .setView([-30,-70],5);
+          L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+            attribution: "© OpenStreetMap contributors"
+          }).addTo(map);
+          entry = mapRefs.current[key] = { map, legend:null };
         } else {
-          entry.map.eachLayer(l => { if (!(l instanceof L.TileLayer)) entry.map.removeLayer(l); });
+          entry.map.eachLayer(l => { if (!(l instanceof L.TileLayer)) entry.map.removeLayer(l) });
         }
-        new GeoRasterLayer({ georaster: raster, opacity: 0.8, resolution: 64, pixelValuesToColorFn: colorFn }).addTo(entry.map);
 
+        // añadir raster
+        new GeoRasterLayer({
+          georaster:            raster,
+          opacity:              0.8,
+          resolution:           64,
+          pixelValuesToColorFn: colorFn
+        }).addTo(entry.map);
+
+        // —–––– Parámetro geojson según zona –––––—
         const zonaParam =
-          zona === "pais"
-            ? `pais=${encodeURIComponent(valor)}`
-            : zona === "comuna"
-              ? `comuna=${encodeURIComponent(valor)}`
-              : zona === "provincia"
-                ? `provincia=${encodeURIComponent(valor)}`
-                : `region=${encodeURIComponent(valor)}`;
+          zona==="pais"      ? `pais=${encodeURIComponent(valor)}` :
+          zona==="norte"     ? `norte=${encodeURIComponent(valor)}` :
+          zona==="centro"    ? `centro=${encodeURIComponent(valor)}` :
+          zona==="sur"       ? `sur=${encodeURIComponent(valor)}` :
+          zona==="comuna"    ? `comuna=${encodeURIComponent(valor)}` :
+          zona==="provincia"? `provincia=${encodeURIComponent(valor)}` :
+                              `region=${encodeURIComponent(valor)}`;
 
-        const gj = await fetch(`${API_BASE}/api/geojson?${zonaParam}`)
-          .then(r => r.json());
+        // fetch geojson y dibujar contorno
+        const gj = await fetch(`${API_BASE}/api/geojson?${zonaParam}`).then(r=>r.json());
         const zoneLayer = L.geoJSON(gj, {
-          style: { color: "#3f3f40", weight: 0.8, fillOpacity: 0 }
+          style:{ color:"#3f3f40", weight:0.8, fillOpacity:0 }
         }).addTo(entry.map);
         if (zoneLayer.getBounds().isValid()) {
-          entry.map.fitBounds(zoneLayer.getBounds(), { padding: [20,20], maxZoom:10 });
+          entry.map.fitBounds(zoneLayer.getBounds(), { padding:[20,20], maxZoom:10 });
         }
 
-        if (entry.legend) { entry.map.removeControl(entry.legend); entry.legend = null; }
-        const legend = L.control({ position: "bottomright" });
+        // leyenda
+        if (entry.legend) { entry.map.removeControl(entry.legend); entry.legend=null; }
+        const legend = L.control({ position:"bottomright" });
         legend.onAdd = () => {
-          const div = L.DomUtil.create("div", "info legend");
-          Object.assign(div.style, { background: "rgba(255,255,255,0.8)", padding: "6px", borderRadius: "4px", boxShadow: "0 0 15px rgba(0,0,0,0.2)", lineHeight: "1.2em", fontSize: "0.9em" });
-          div.innerHTML = `<strong style="display:block; text-align:center; margin-bottom:4px;">${labelMap[key]}</strong>`;
-          if (key === "normal" && tipo === "precipitacion") {
-            const min = raster.mins[0], max = raster.maxs[0], step = (max-min)/10;
-            for (let i=0; i<10; i++) {
-              const f = (min+step*i).toFixed(1), t = (min+step*(i+1)).toFixed(1);
-              div.innerHTML += `<i style="background:${colorRamp[i]};width:18px;height:8px;display:inline-block;margin-right:4px;"></i>${f}–${t} mm<br>`;
+          const div = L.DomUtil.create("div","info legend");
+          Object.assign(div.style,{
+            background:"rgba(255,255,255,0.8)",
+            padding:"6px",
+            borderRadius:"4px",
+            boxShadow:"0 0 15px rgba(0,0,0,0.2)",
+            lineHeight:"1.2em",
+            fontSize:"0.9em"
+          });
+          div.innerHTML = `<strong style="display:block;text-align:center;margin-bottom:4px;">
+                             ${labelMap[key]}
+                           </strong>`;
+          if (key==="normal" && tipo==="precipitacion") {
+            const [min,max] = [raster.mins[0], raster.maxs[0]];
+            const step = (max-min)/10;
+            for (let i=0;i<10;i++){
+              const f=(min+step*i).toFixed(1),
+                    t=(min+step*(i+1)).toFixed(1);
+              div.innerHTML +=
+                `<i style="background:${colorRamp[i]};width:18px;height:8px;display:inline-block;margin-right:4px"></i>
+                 ${f}–${t} mm<br>`;
             }
-          } else if (key === "normal" && tipo === "temperatura") {
-            const min = raster.mins[0], max = raster.maxs[0], step = (max-min)/10;
-            for (let i=0; i<10; i++) {
-              const f = (min+step*i).toFixed(1), t = (min+step*(i+1)).toFixed(1);
-              div.innerHTML += `<i style="background:${colorRamp[i]};width:18px;height:8px;display:inline-block;margin-right:4px;"></i>${f}–${t} °C<br>`;
+          }
+          else if (key==="normal" && tipo==="temperatura") {
+            const [min,max] = [raster.mins[0], raster.maxs[0]];
+            const step = (max-min)/10;
+            for (let i=0;i<10;i++){
+              const f=(min+step*i).toFixed(1),
+                    t=(min+step*(i+1)).toFixed(1);
+              div.innerHTML +=
+                `<i style="background:${colorRamp[i]};width:18px;height:8px;display:inline-block;margin-right:4px"></i>
+                 ${f}–${t} °C<br>`;
             }
-          } else {
-            for (let i=0; i<10; i++) {
-              const f = (i/10).toFixed(1), t = ((i+1)/10).toFixed(1);
-              div.innerHTML += `<i style="background:${colorRamp[i]};width:18px;height:8px;display:inline-block;margin-right:4px;"></i>${f}–${t}<br>`;
+          }
+          else {
+            for (let i=0;i<10;i++){
+              const f=(i/10).toFixed(1),
+                    t=((i+1)/10).toFixed(1);
+              div.innerHTML +=
+                `<i style="background:${colorRamp[i]};width:18px;height:8px;display:inline-block;margin-right:4px"></i>
+                 ${f}–${t}<br>`;
             }
           }
           return div;
         };
         legend.addTo(entry.map);
         entry.legend = legend;
+
       })().catch(err => console.error(`Error capa ${key}:`, err));
     });
   }, [capas, tipo, zona, valor]);
 
-  // 6) Configurar botón de stats
-  const showFuzzyButton = tipo === "precipitacion" || tipo === "temperatura";
-  const statsEndpoint = tipo === "precipitacion"
-    ? "/api/precipitacion-fuzzy-stats"
-    : "/api/temperatura-fuzzy-stats";
-  const statsUrl = `${API_BASE}${statsEndpoint}?zona=${zona}&valor=${encodeURIComponent(valor)}&fecha=${fecha}`;
+  // 6) Botón de stats fuzzy
+  const showFuzzy = tipo==="precipitacion"||tipo==="temperatura";
+  const statsUrl = `${API_BASE}/api/${
+    tipo==="precipitacion"?"precipitacion":"temperatura"
+  }-fuzzy-stats?zona=${zona}&valor=${encodeURIComponent(valor)}&fecha=${fecha}`;
 
-  
   return (
     <div>
-      {tipo === "riesgo" && (
-        <div style={{ marginBottom: 10 }}>
+      {tipo==="riesgo" && (
+        <div style={{ marginBottom:10 }}>
           <label>
             <input
               type="checkbox"
               checked={verPromedio}
-              onChange={() => setVerPromedio(v => !v)}
+              onChange={()=>setVerPromedio(v=>!v)}
             />{' '}
             Ver promedio últimos 2 años
           </label>
         </div>
       )}
 
-      <div
-        style={{
-          display:   "flex",
-          flexWrap:  "nowrap",   // fuerza una sola línea
-          gap:       "0.5rem",   // un poco de espacio entre paneles
-          overflowX: "auto"      // scroll horizontal si no caben todos
-        }}
-      >
-        {capas.map(({ key }) => (
+      <div style={{
+        display:   "flex",
+        flexWrap:  "nowrap",
+        gap:       "0.5rem",
+        overflowX: "auto"
+      }}>
+        {capas.map(({ key })=>(
           <div
             key={key}
             id={`map-${key}`}
             style={{
-              flex:      "1 1 calc(25% - 0.5rem)", // 4 columnas iguales
-              minWidth:  "200px",                  // anchura mínima
-              height:    "650px",                  // altura mayor
+              flex:      "1 1 calc(25% - 0.5rem)",
+              minWidth:  "200px",
+              height:    "650px",
               border:    "1px solid #ddd",
               boxSizing: "border-box"
             }}
@@ -203,11 +236,11 @@ export default function MapaImagen({ tipo, zona, valor, fecha }) {
         ))}
       </div>
 
-      {showFuzzyButton && (
+      {showFuzzy && (
         <div className="mt-4 text-center">
           <button
             className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-            onClick={() => setModalOpen(true)}
+            onClick={()=>setModalOpen(true)}
           >
             Ver variables lingüísticas
           </button>
