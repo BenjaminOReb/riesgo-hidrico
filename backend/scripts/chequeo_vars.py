@@ -52,10 +52,10 @@ if __name__ == "__main__":
         for fn in os.listdir(os.path.join(base, "fuzzy"))
         if fn.endswith(".nc")
     ]
-    # 3) Índices de riesgo raw y fuzzy
+    # 3) Índices de riesgo crisp y fuzzy
     archivos += [
-        os.path.join(base, "riesgo_raw", fn)
-        for fn in os.listdir(os.path.join(base, "riesgo_raw"))
+        os.path.join(base, "riesgo_crisp", fn)
+        for fn in os.listdir(os.path.join(base, "riesgo_crisp"))
         if fn.endswith(".nc")
     ]
     archivos += [
@@ -64,8 +64,8 @@ if __name__ == "__main__":
         if fn.endswith(".nc")
     ]
     archivos += [
-        os.path.join(base, "raw", "CR2MET_pr_v2.0_mon_1979_2019_005deg.nc"),
-        os.path.join(base, "raw","CR2MET_t2m_v2.0_mon_1979_2019_005deg.nc"),
+        os.path.join(base, "crisp", "CR2MET_pr_v2.0_mon_1979_2019_005deg.nc"),
+        os.path.join(base, "crisp","CR2MET_t2m_v2.0_mon_1979_2019_005deg.nc"),
     ]
 
     for path in archivos:

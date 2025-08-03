@@ -39,10 +39,10 @@ export default function MapaImagen({ tipo, zona, valor, fecha }) {
     const urls = [];
     if (tipo === "riesgo") {
       if (verPromedio) {
-        urls.push({ key:"normal", url:`${API_BASE}/api/promedio-riesgo-raw-zona?zona=${zona}&valor=${enc(valor)}` });
+        urls.push({ key:"normal", url:`${API_BASE}/api/promedio-riesgo-crisp-zona?zona=${zona}&valor=${enc(valor)}` });
         urls.push({ key:"fuzzy",  url:`${API_BASE}/api/promedio-riesgo-fuzzy-zona?zona=${zona}&valor=${enc(valor)}` });
       } else {
-        urls.push({ key:"normal", url:`${API_BASE}/api/riesgo-raw-geotiff?zona=${zona}&valor=${enc(valor)}&fecha=${fecha}` });
+        urls.push({ key:"normal", url:`${API_BASE}/api/riesgo-crisp-geotiff?zona=${zona}&valor=${enc(valor)}&fecha=${fecha}` });
         urls.push({ key:"fuzzy",  url:`${API_BASE}/api/riesgo-fuzzy-geotiff?zona=${zona}&valor=${enc(valor)}&fecha=${fecha}` });
       }
     }
@@ -61,7 +61,7 @@ export default function MapaImagen({ tipo, zona, valor, fecha }) {
 
   // 4) Etiquetas
   const labelMap = useMemo(() => {
-    if (tipo === "riesgo") return { normal:"Riesgo crudo", fuzzy:"Riesgo fuzzy" };
+    if (tipo === "riesgo") return { normal:"Riesgo crisp", fuzzy:"Riesgo fuzzy" };
     if (tipo === "precipitacion") return {
       normal:"Precipitación (mm)",
       baja:  "GP Prec. Baja",
@@ -88,7 +88,7 @@ export default function MapaImagen({ tipo, zona, valor, fecha }) {
         const buf = await res.arrayBuffer();
         const raster = await georaster(buf);
 
-        // colorfn dinámico si no es riesgo crudo
+        // colorfn dinámico si no es riesgo crisp
         let colorFn = pixelValuesToColorFn;
         if (key==="normal" && tipo!=="riesgo") {
           const [min,max] = [raster.mins[0], raster.maxs[0]];

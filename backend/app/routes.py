@@ -19,10 +19,11 @@ from app.procesar import (
     recortar_ultimos_5_anos,
     generar_capas_fuzzy,
     calcular_indice_riesgo_fuzzy,
-    calcular_indice_riesgo_raw,
+    calcular_indice_riesgo_crisp,
     calcular_fecha_desde_indice,
     generar_geotiff_zona,
-    calcular_stats_fuzzy
+    calcular_stats_fuzzy,
+    limpiar_atributos_conflictivos
 )
 
 #Blueprint para organizar las rutas
@@ -38,20 +39,20 @@ def upload_file():
     if 'file' not in request.files:
         return jsonify({'error': 'Archivo no encontrado'}), 400
 
-    # 1) Guardar raw
+    # 1) Guardar crisp
     file     = request.files['file']
     filename = secure_filename(file.filename)
-    raw_dir  = os.path.join(UPLOAD_FOLDER, 'raw')
-    os.makedirs(raw_dir, exist_ok=True)
-    raw_path = os.path.join(raw_dir, filename)
-    file.save(raw_path)
+    crisp_dir  = os.path.join(UPLOAD_FOLDER, 'crisp')
+    os.makedirs(crisp_dir, exist_ok=True)
+    crisp_path = os.path.join(crisp_dir, filename)
+    file.save(crisp_path)
 
     try:
         conn = get_connection()
         cur  = conn.cursor()
 
         # 2) Recortar últimos 60 meses
-        recortado_path = recortar_ultimos_5_anos(raw_path)
+        recortado_path = recortar_ultimos_5_anos(crisp_path)
         nombre_base    = os.path.basename(recortado_path).split("_")[1]  # 'YYYY-MM'
         tipo_rec       = os.path.basename(recortado_path).split("_")[0]  # 'pr' o 't2m'
 
@@ -79,7 +80,7 @@ def upload_file():
             ))
             conn.commit()
 
-        # 3) Generar riesgo_raw si ya existen ambos recortados
+        # 3) Generar riesgo_crisp si ya existen ambos recortados
         carpeta_rec = os.path.dirname(recortado_path)
         otra_var    = 't2m' if tipo_rec == 'pr' else 'pr'
         otro_rec    = os.path.join(carpeta_rec, f"{otra_var}_{nombre_base}_recortado.nc")
@@ -90,25 +91,25 @@ def upload_file():
 
             cur.execute("""
                 SELECT ruta FROM archivos
-                WHERE tipo_archivo = 'riesgo_raw'
+                WHERE tipo_archivo = 'riesgo_crisp'
                   AND nombre_base   = %s
             """, (nombre_base,))
-            fila_raw = cur.fetchone()
+            fila_crisp = cur.fetchone()
 
-            if fila_raw:
-                ruta_raw_bd = fila_raw[0]
-                if not os.path.exists(ruta_raw_bd):
-                    res_raw = calcular_indice_riesgo_raw(pr_rec, t2m_rec)
+            if fila_crisp:
+                ruta_crisp_bd = fila_crisp[0]
+                if not os.path.exists(ruta_crisp_bd):
+                    res_crisp = calcular_indice_riesgo_crisp(pr_rec, t2m_rec)
                     cur.execute("""
                         UPDATE archivos
                         SET ruta=%s
-                        WHERE tipo_archivo='riesgo_raw' AND nombre_base=%s
-                    """, (res_raw['archivo'], nombre_base))
+                        WHERE tipo_archivo='riesgo_crisp' AND nombre_base=%s
+                    """, (res_crisp['archivo'], nombre_base))
                     conn.commit()
-                ruta_raw = ruta_raw_bd
+                ruta_crisp = ruta_crisp_bd
             else:
-                res_raw = calcular_indice_riesgo_raw(pr_rec, t2m_rec)
-                ruta_raw = res_raw['archivo']
+                res_crisp = calcular_indice_riesgo_crisp(pr_rec, t2m_rec)
+                ruta_crisp = res_crisp['archivo']
                 fecha_ini = calcular_fecha_desde_indice(nombre_base, 1)
                 fecha_fin = calcular_fecha_desde_indice(nombre_base, 60)
                 cur.execute("""
@@ -119,10 +120,10 @@ def upload_file():
                       es_riesgo_final
                     ) VALUES (%s,%s,%s,%s,%s,NOW(),%s,%s,%s)
                 """, (
-                    os.path.basename(ruta_raw),
-                    ruta_raw,
-                    'riesgo_raw',
-                    'riesgo_raw',
+                    os.path.basename(ruta_crisp),
+                    ruta_crisp,
+                    'riesgo_crisp',
+                    'riesgo_crisp',
                     nombre_base,
                     fecha_ini,
                     fecha_fin,
@@ -130,7 +131,7 @@ def upload_file():
                 ))
                 conn.commit()
         else:
-            ruta_raw = None
+            ruta_crisp = None
 
         # 4) Generar capas fuzzy
         resultado_fuzzy = generar_capas_fuzzy(recortado_path)
@@ -195,6 +196,8 @@ def upload_file():
                 riesgo_fuzzy_path = res_riesgo['archivo']
                 fecha_ini_r = calcular_fecha_desde_indice(nombre_base, 1)
                 fecha_fin_r = calcular_fecha_desde_indice(nombre_base, 60)
+                with xr.open_dataset(riesgo_fuzzy_path, decode_times=False) as ds_r:
+                    variables_en_archivo = ",".join(ds_r.data_vars.keys())
                 cur.execute("""
                     INSERT INTO archivos (
                       nombre, ruta, variables, tipo_archivo,
@@ -205,7 +208,7 @@ def upload_file():
                 """, (
                     os.path.basename(riesgo_fuzzy_path),
                     riesgo_fuzzy_path,
-                    'riesgo_fuzzy',
+                    variables_en_archivo,
                     'riesgo_fuzzy',
                     nombre_base,
                     fecha_ini_r,
@@ -224,7 +227,7 @@ def upload_file():
             'mensaje'        : 'Archivos procesados correctamente',
             'nombre_base'    : nombre_base,
             'recortado'      : os.path.basename(recortado_path),
-            'riesgo_raw'     : ruta_raw and os.path.basename(ruta_raw),
+            'riesgo_crisp'     : ruta_crisp and os.path.basename(ruta_crisp),
             'fuzzy'          : os.path.basename(ruta_fuzzy),
             'riesgo_fuzzy'   : riesgo_fuzzy_path and os.path.basename(riesgo_fuzzy_path)
         })
@@ -306,8 +309,8 @@ def servir_riesgo_fuzzy_geotiff():
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
-@routes.route('/api/riesgo-raw-geotiff', methods=['GET'])
-def servir_riesgo_raw_geotiff():
+@routes.route('/api/riesgo-crisp-geotiff', methods=['GET'])
+def servir_riesgo_crisp_geotiff():
 
     # Devuelve un GeoTIFF recortado al área de la zona y al mes solicitado.
     # Busca en BD el NetCDF que cubra la fecha, calcula el índice de tiempo
@@ -319,13 +322,13 @@ def servir_riesgo_raw_geotiff():
     if not zona or not valor or not fecha:
         return jsonify({'error': 'Faltan parámetros'}), 400
 
-    # 1) Buscar en BD el NetCDF de riesgo_raw que cubra esa fecha
+    # 1) Buscar en BD el NetCDF de riesgo_crisp que cubra esa fecha
     conn = get_connection()
     cur  = conn.cursor()
     cur.execute("""
         SELECT ruta, nombre_base, fecha_inicial_datos
         FROM archivos
-        WHERE tipo_archivo = 'riesgo_raw'
+        WHERE tipo_archivo = 'riesgo_crisp'
           AND fecha_inicial_datos <= %s
           AND fecha_final_datos   >= %s
         ORDER BY fecha_final_datos DESC
@@ -335,9 +338,9 @@ def servir_riesgo_raw_geotiff():
     cur.close(); conn.close()
 
     if not fila:
-        return jsonify({'error': f'No se encontró un archivo de riesgo_raw que abarque {fecha}'}), 404
+        return jsonify({'error': f'No se encontró un archivo de riesgo_crisp que abarque {fecha}'}), 404
 
-    ruta_raw, nombre_base, fecha_ini = fila
+    ruta_crisp, nombre_base, fecha_ini = fila
 
     # 2) Calcular el índice de tiempo (0–59)
     fecha_pedida  = datetime.datetime.strptime(fecha, "%Y-%m").date().replace(day=1)
@@ -348,7 +351,7 @@ def servir_riesgo_raw_geotiff():
 
     # 3) Generar y devolver el GeoTIFF
     zona_gdf = obtener_zona_gdf(zona, valor).to_crs(epsg=4326)
-    ruta_tif = generar_geotiff_zona(zona_gdf, ruta_raw, meses_index, 'riesgo_raw')
+    ruta_tif = generar_geotiff_zona(zona_gdf, ruta_crisp, meses_index, 'riesgo_crisp')
 
     return send_file(ruta_tif, mimetype='image/tiff')
 
@@ -918,10 +921,10 @@ def fechas_disponibles():
 
 @routes.route('/api/promedio-riesgo-fuzzy-zona', methods=['GET'])
 def promedio_riesgo_fuzzy_zona():
-
-    # Calcula el promedio del índice de riesgo_fuzzy de los últimos 24 meses
-    # para la zona seleccionada y devuelve un GeoTIFF.
-
+    """
+    Calcula el promedio del índice 'riesgo_alto' (últimos 24 pasos temporales)
+    para la zona seleccionada y devuelve un GeoTIFF.
+    """
     zona = request.args.get('zona')
     valor = request.args.get('valor')
 
@@ -929,7 +932,7 @@ def promedio_riesgo_fuzzy_zona():
         return jsonify({'error': 'Faltan parámetros'}), 400
 
     try:
-        # Obtiene el último archivo de riesgo_fuzzy subido
+        # Obtener el último archivo de riesgo_fuzzy (que ahora contiene las 9 variables)
         conn = get_connection()
         cur = conn.cursor()
         cur.execute("""
@@ -949,22 +952,37 @@ def promedio_riesgo_fuzzy_zona():
 
         ruta_riesgo, fecha_final = resultado
 
-        # Abrir el dataset con decode_times=False por el problema de "months since"
+        # Abrir el dataset (decode_times=False si se usa ese esquema en el proyecto)
         ds = xr.open_dataset(ruta_riesgo, decode_times=False)
-        riesgo_fuzzy = ds['riesgo_fuzzy'] 
 
-        # Calcular promedio de los últimos 24 meses
-        riesgo_promedio = riesgo_fuzzy[-24:, :, :].mean(dim='time', keep_attrs=True)
+        var_name = 'riesgo_fuzzy' 
+        if var_name not in ds.data_vars:
+            ds.close()
+            return jsonify({'error': f"La variable '{var_name}' no está presente en {os.path.basename(ruta_riesgo)}"}), 500
 
-        # Crear un nuevo NetCDF temporal para reutilizar la lógica de GeoTIFF
-        temp_ds = xr.Dataset({'riesgo_fuzzy': riesgo_promedio.expand_dims(time=[0])})
-        temp_filename = f"promedio_riesgo_{uuid.uuid4().hex}.nc"
+        # Extraer y promediar los últimos 24 pasos temporales
+        riesgo_var = ds[var_name]
+        if riesgo_var.sizes.get('time', 0) < 1:
+            ds.close()
+            return jsonify({'error': 'No hay dimensión temporal válida en el archivo de riesgo'}), 500
+
+        # Tomar hasta 24 últimos, si hay menos toma todos
+        n = min(24, riesgo_var.sizes['time'])
+        riesgo_promedio = riesgo_var[-n:, :, :].mean(dim='time', keep_attrs=True)
+
+        # Crear dataset temporal con dimensión time para compatibilidad con la generación de GeoTIFF
+        temp_ds = xr.Dataset({var_name: riesgo_promedio.expand_dims(time=[0])})
+        temp_ds = limpiar_atributos_conflictivos(temp_ds)
+
+        temp_filename = f"promedio_{var_name}_{uuid.uuid4().hex}.nc"
         temp_path = os.path.join(tempfile.gettempdir(), temp_filename)
         temp_ds.to_netcdf(temp_path)
+        temp_ds.close()
+        ds.close()
 
-        # Obtener geometría y generar TIFF
+        # Obtener geometría de recorte y generar el GeoTIFF
         zona_gdf = obtener_zona_gdf(zona, valor).to_crs(epsg=4326)
-        ruta_tif = generar_geotiff_zona(zona_gdf, temp_path, 0, 'riesgo_fuzzy')
+        ruta_tif = generar_geotiff_zona(zona_gdf, temp_path, 0, var_name)
 
         return send_file(ruta_tif, mimetype='image/tiff')
 
@@ -973,10 +991,10 @@ def promedio_riesgo_fuzzy_zona():
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
-@routes.route('/api/promedio-riesgo-raw-zona', methods=['GET'])
-def promedio_riesgo_raw_zona():
+@routes.route('/api/promedio-riesgo-crisp-zona', methods=['GET'])
+def promedio_riesgo_crisp_zona():
 
-    # Calcula el promedio del índice de riesgo_raw de los últimos 24 meses
+    # Calcula el promedio del índice de riesgo_crisp de los últimos 24 meses
     # para la zona seleccionada y devuelve un GeoTIFF.
 
     zona = request.args.get('zona')
@@ -986,13 +1004,13 @@ def promedio_riesgo_raw_zona():
         return jsonify({'error': 'Faltan parámetros'}), 400
 
     try:
-        # Obtiene el último archivo de riesgo_raw subido
+        # Obtiene el último archivo de riesgo_crisp subido
         conn = get_connection()
         cur = conn.cursor()
         cur.execute("""
             SELECT ruta, fecha_final_datos
             FROM archivos
-            WHERE tipo_archivo = 'riesgo_raw'
+            WHERE tipo_archivo = 'riesgo_crisp'
               AND es_riesgo_final = TRUE
             ORDER BY fecha_final_datos DESC
             LIMIT 1
@@ -1002,26 +1020,26 @@ def promedio_riesgo_raw_zona():
         conn.close()
 
         if not resultado:
-            return jsonify({'error': 'No se encontró archivo de riesgo_raw'}), 404
+            return jsonify({'error': 'No se encontró archivo de riesgo_crisp'}), 404
 
         ruta_riesgo, fecha_final = resultado
 
         # Abrir el dataset con decode_times=False por el problema de "months since"
         ds = xr.open_dataset(ruta_riesgo, decode_times=False)
-        riesgo_raw = ds['riesgo_raw'] 
+        riesgo_crisp = ds['riesgo_crisp'] 
 
         # Calcular promedio de los últimos 24 meses
-        riesgo_promedio = riesgo_raw[-24:, :, :].mean(dim='time', keep_attrs=True)
+        riesgo_promedio = riesgo_crisp[-24:, :, :].mean(dim='time', keep_attrs=True)
 
         # Crear un nuevo NetCDF temporal para reutilizar la lógica de GeoTIFF
-        temp_ds = xr.Dataset({'riesgo_raw': riesgo_promedio.expand_dims(time=[0])})
+        temp_ds = xr.Dataset({'riesgo_crisp': riesgo_promedio.expand_dims(time=[0])})
         temp_filename = f"promedio_riesgo_{uuid.uuid4().hex}.nc"
         temp_path = os.path.join(tempfile.gettempdir(), temp_filename)
         temp_ds.to_netcdf(temp_path)
 
         # Obtener geometría y generar TIFF
         zona_gdf = obtener_zona_gdf(zona, valor).to_crs(epsg=4326)
-        ruta_tif = generar_geotiff_zona(zona_gdf, temp_path, 0, 'riesgo_raw')
+        ruta_tif = generar_geotiff_zona(zona_gdf, temp_path, 0, 'riesgo_crisp')
 
         return send_file(ruta_tif, mimetype='image/tiff')
 

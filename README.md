@@ -94,6 +94,7 @@ frontend/
 - **Frontend**
   - cd frontend
   - npm install
+  - npm install apexcharts react-apexcharts
   - npm run dev
 
   Abrir en http://localhost:5173

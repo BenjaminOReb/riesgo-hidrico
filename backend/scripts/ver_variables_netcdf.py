@@ -5,18 +5,18 @@ import xarray as xr
 import numpy as np
 
 archivos = [
-    "uploads/raw/CR2MET_pr_v2.0_mon_1979_2019_005deg.nc",
-    "uploads/raw/CR2MET_t2m_v2.0_mon_1979_2019_005deg.nc",
+    "uploads/crisp/CR2MET_pr_v2.0_mon_1979_2019_005deg.nc",
+    "uploads/crisp/CR2MET_t2m_v2.0_mon_1979_2019_005deg.nc",
     "uploads/recortado/pr_2019-05_recortado.nc",
     "uploads/recortado/t2m_2019-05_recortado.nc",
-    "uploads/riesgo_raw/riesgo_raw_2019-05.nc",
+    "uploads/riesgo_crisp/riesgo_crisp_2019-05.nc",
     "uploads/fuzzy/fuzzy_pr_2019-05.nc",
     "uploads/fuzzy/fuzzy_t2m_2019-05.nc",
     "uploads/riesgo_fuzzy/riesgo_fuzzy_2019-05.nc"
 ]
 
 # Sufijos que identifican las variables de interés
-sufijos = ("pr", "t2m", "_baja", "_media", "_alta", "riesgo_fuzzy", "riesgo_raw")
+sufijos = ("pr", "t2m", "_baja", "_media", "_alta", "riesgo_fuzzy", "riesgo_crisp")
 
 for ruta_str in archivos:
     ruta = Path(ruta_str)

@@ -9,16 +9,16 @@ from affine import Affine
 # --- Configuración de archivos y variables ---
 # Ajusta estas rutas si tus archivos están en otras carpetas
 files = [
-    #("uploads/riesgo_raw/riesgo_raw_2019-05.nc", "riesgo_raw",    "Riesgo Crisp"),
-    #("uploads/riesgo_fuzzy/riesgo_fuzzy_2019-05.nc", "riesgo_fuzzy", "Riesgo Fuzzy"),
+    ("uploads/riesgo_crisp/riesgo_crisp_2019-05.nc", "riesgo_crisp",    "Riesgo Crisp"),
+    ("uploads/riesgo_fuzzy/riesgo_fuzzy_2019-05.nc", "riesgo_fuzzy", "Riesgo Fuzzy"),
     #("uploads/recortado/t2m_2019-05_recortado.nc",   "t2m",          "Temperatura"),
     #("uploads/fuzzy/fuzzy_t2m_2019-05.nc",           "t2m_baja",    "Temperatura Fuzzy (baja)"),
     #("uploads/fuzzy/fuzzy_t2m_2019-05.nc",           "t2m_media",    "Temperatura Fuzzy (moderada)"),
     #("uploads/fuzzy/fuzzy_t2m_2019-05.nc",           "t2m_alta",    "Temperatura Fuzzy (alta)"),
-    ("uploads/recortado/pr_2019-05_recortado.nc",    "pr",           "Precipitación"),
-    ("uploads/fuzzy/fuzzy_pr_2019-05.nc",            "pr_baja",     "Precipitación Fuzzy (baja)"),
-    ("uploads/fuzzy/fuzzy_pr_2019-05.nc",            "pr_media",     "Precipitación Fuzzy (moderada)"),
-    ("uploads/fuzzy/fuzzy_pr_2019-05.nc",            "pr_alta",     "Precipitación Fuzzy (alta)")
+    #("uploads/recortado/pr_2019-05_recortado.nc",    "pr",           "Precipitación"),
+    #("uploads/fuzzy/fuzzy_pr_2019-05.nc",            "pr_baja",     "Precipitación Fuzzy (baja)"),
+    #("uploads/fuzzy/fuzzy_pr_2019-05.nc",            "pr_media",     "Precipitación Fuzzy (moderada)"),
+    #("uploads/fuzzy/fuzzy_pr_2019-05.nc",            "pr_alta",     "Precipitación Fuzzy (alta)")
 ]
 
 time_index = 59 # índice temporal a plotear (0 a 59 en tu caso)
@@ -30,11 +30,11 @@ regiones = (
 
 region_names = [
     #Norte
-    #"Región de Arica y Parinacota",
-    #"Región de Tarapacá",
-    #"Región de Antofagasta",
-    #"Región de Atacama",
-    #"Región de Coquimbo",
+    "Región de Arica y Parinacota",
+    "Región de Tarapacá",
+    "Región de Antofagasta",
+    "Región de Atacama",
+    "Región de Coquimbo",
     #Centro
     #"Región de Valparaíso",
     #"Región Metropolitana de Santiago",
@@ -43,12 +43,12 @@ region_names = [
     #"Región de Ñuble",
     #"Región del Bío-Bío",
     #Sur
-    "Región de La Araucanía",
-    "Región de Los Ríos",
-    "Región de Los Lagos",
-    "Región de Aysén del Gral.Ibañez del Campo",
-    "Región de Magallanes y Antártica Chilena",
-    "Zona sin demarcar",
+    #"Región de La Araucanía",
+    #"Región de Los Ríos",
+    #"Región de Los Lagos",
+    #"Región de Aysén del Gral.Ibañez del Campo",
+    #"Región de Magallanes y Antártica Chilena",
+    #"Zona sin demarcar",
 ]
 
 seleccion = regiones[regiones["Region"].isin(region_names)]

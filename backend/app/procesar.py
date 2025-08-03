@@ -68,16 +68,16 @@ def generar_capas_fuzzy(ruta_archivo, carpeta_salida="uploads/fuzzy"):
     os.makedirs(carpeta_salida, exist_ok=True)
 
     # 1) Abrir el NetCDF original
-    ds_raw = xr.open_dataset(ruta_archivo, decode_times=False)
-    if 'pr' in ds_raw.data_vars:
+    ds_crisp = xr.open_dataset(ruta_archivo, decode_times=False)
+    if 'pr' in ds_crisp.data_vars:
         var = 'pr'
-    elif 't2m' in ds_raw.data_vars:
+    elif 't2m' in ds_crisp.data_vars:
         var = 't2m'
     else:
-        ds_raw.close()
+        ds_crisp.close()
         raise ValueError("No se reconoce variable 'pr' o 't2m'")
 
-    da = ds_raw[var]                        # DataArray (time, lat, lon)
+    da = ds_crisp[var]                        # DataArray (time, lat, lon)
     datos = da.values.astype(float)         # numpy array
 
     # 2) Log10 si es precipitación
@@ -85,8 +85,8 @@ def generar_capas_fuzzy(ruta_archivo, carpeta_salida="uploads/fuzzy"):
         datos = np.log10(datos + 0.1)
 
     # 3) Guardar rejilla original
-    orig_lons = ds_raw.lon.values.copy()
-    orig_lats = ds_raw.lat.values.copy()
+    orig_lons = ds_crisp.lon.values.copy()
+    orig_lats = ds_crisp.lat.values.copy()
     T, Y, X = datos.shape
 
     # 4) Rasterizar regiones
@@ -158,14 +158,14 @@ def generar_capas_fuzzy(ruta_archivo, carpeta_salida="uploads/fuzzy"):
         orig_lons = orig_lons[::-1]
 
     # 8) Crear DataArrays fuzzy con las coords corregidas
-    coords = {'time': ds_raw.time, 'lat': orig_lats, 'lon': orig_lons}
+    coords = {'time': ds_crisp.time, 'lat': orig_lats, 'lon': orig_lons}
     dims = ('time', 'lat', 'lon')
     da_baja  = xr.DataArray(baja,  dims=dims, coords=coords, name=f"{var}_baja")
     da_media = xr.DataArray(media, dims=dims, coords=coords, name=f"{var}_media")
     da_alta  = xr.DataArray(alta,  dims=dims, coords=coords, name=f"{var}_alta")
 
     # 9) Montar y ordenar Dataset de salida
-    ds_out = ds_raw.assign({
+    ds_out = ds_crisp.assign({
         da_baja.name:  da_baja,
         da_media.name: da_media,
         da_alta.name:  da_alta
@@ -177,7 +177,7 @@ def generar_capas_fuzzy(ruta_archivo, carpeta_salida="uploads/fuzzy"):
     nombre_base = generar_nombre_base(ds_out)
     ruta_salida = os.path.join(carpeta_salida, f"fuzzy_{var}_{nombre_base}.nc")
     ds_out.to_netcdf(ruta_salida)
-    ds_raw.close()
+    ds_crisp.close()
     ds_out.close()
 
     return {
@@ -189,18 +189,72 @@ def generar_capas_fuzzy(ruta_archivo, carpeta_salida="uploads/fuzzy"):
 
 
 def calcular_indice_riesgo_fuzzy(pr_path, t2m_path, carpeta_salida="uploads/riesgo_fuzzy"):
-    
-    # Genera un NetCDF con índice de riesgo fuzzy = max(pr_baja, t2m_alta).
-    
+    # Genera un NetCDF con las nueve componentes:
+    #  - riesgo_alto_A:  pr_baja
+    #  - riesgo_alto_B:  t2m_alta
+    #  - riesgo_medio_A: pr_media
+    #  - riesgo_medio_B: t2m_media
+    #  - riesgo_medio_C: min(pr_media, t2m_media)
+    #  - riesgo_medio_D: max(pr_media, t2m_media)
+    #  - riesgo_medio_E: (pr_media + t2m_media) / 2
+    #  - riesgo_bajo_A:  pr_alta
+    #  - riesgo_bajo_B:  t2m_baja
+
     os.makedirs(carpeta_salida, exist_ok=True)
     pr_ds  = xr.open_dataset(pr_path,  decode_times=False)
     t2m_ds = xr.open_dataset(t2m_path, decode_times=False)
-    pr_baja  = pr_ds['pr_baja'].values
-    t2m_alta = t2m_ds['t2m_alta'].values
-    riesgo_fuzzy = np.maximum(pr_baja, t2m_alta)
+
+    # Extraer arrays numpy directamente como en la versión original para evitar alineación
+    pr_baja   = pr_ds['pr_baja'].values
+    pr_media  = pr_ds['pr_media'].values
+    pr_alta   = pr_ds['pr_alta'].values
+    t2m_baja  = t2m_ds['t2m_baja'].values
+    t2m_media = t2m_ds['t2m_media'].values
+    t2m_alta  = t2m_ds['t2m_alta'].values
+
+    # Calcular las componentes solicitadas
+    riesgo_alto_A  = np.minimum(t2m_alta,  pr_baja)  # Tem Alta + Pr Baja 
+    riesgo_alto_B  = np.minimum(t2m_media, pr_baja)  # Tem Media + Pr Baja
+
+    riesgo_medio_A = np.minimum(t2m_baja,  pr_baja)  # Tem Baja + Pr Baja
+    riesgo_medio_B = np.minimum(t2m_alta,  pr_media) # Tem Alta + Pr Media
+    riesgo_medio_C = np.minimum(t2m_media, pr_media) # Tem Media + Pr Media
+    riesgo_medio_D = np.minimum(t2m_baja,  pr_media) # Tem Baja + Pr Media
+    riesgo_medio_E = np.minimum(t2m_alta,  pr_alta)  # Tem Alta + Pr Alta
+
+    riesgo_bajo_A  = np.minimum(t2m_media, pr_alta)  # Tem Media + Pr Alta
+    riesgo_bajo_B  = np.minimum(t2m_baja,  pr_alta)  # Tem Baja + Pr Alta
+
+    riesgo_alto  = np.maximum(riesgo_alto_A, riesgo_alto_B)
+    riesgo_medio = np.maximum.reduce([
+        riesgo_medio_A,
+        riesgo_medio_B,
+        riesgo_medio_C,
+        riesgo_medio_D,
+        riesgo_medio_E
+    ])
+    riesgo_bajo  = np.maximum(riesgo_bajo_A, riesgo_bajo_B)
+
+    riesgo_fuzzy = np.maximum(pr_baja, t2m_alta)  #np.maximum.reduce([riesgo_alto, riesgo_medio, riesgo_bajo])
+
     coords = pr_ds.coords
 
-    ds_r = xr.Dataset({"riesgo_fuzzy": (("time","lat","lon"), riesgo_fuzzy)}, coords=coords)
+    ds_r = xr.Dataset({
+        "riesgo_alto_A":   (("time", "lat", "lon"), riesgo_alto_A),
+        "riesgo_alto_B":   (("time", "lat", "lon"), riesgo_alto_B),
+        "riesgo_medio_A":  (("time", "lat", "lon"), riesgo_medio_A),
+        "riesgo_medio_B":  (("time", "lat", "lon"), riesgo_medio_B),
+        "riesgo_medio_C":  (("time", "lat", "lon"), riesgo_medio_C),
+        "riesgo_medio_D":  (("time", "lat", "lon"), riesgo_medio_D),
+        "riesgo_medio_E":  (("time", "lat", "lon"), riesgo_medio_E),
+        "riesgo_bajo_A":   (("time", "lat", "lon"), riesgo_bajo_A),
+        "riesgo_bajo_B":   (("time", "lat", "lon"), riesgo_bajo_B),
+        "riesgo_alto":   (("time", "lat", "lon"), riesgo_alto),
+        "riesgo_medio":  (("time", "lat", "lon"), riesgo_medio),
+        "riesgo_bajo":   (("time", "lat", "lon"), riesgo_bajo),
+        "riesgo_fuzzy":  (("time", "lat", "lon"), riesgo_fuzzy),
+    }, coords=coords)
+
     ds_r = limpiar_atributos_conflictivos(ds_r)
     nombre_base = generar_nombre_base(pr_ds)
     ruta_salida = os.path.join(carpeta_salida, f"riesgo_fuzzy_{nombre_base}.nc")
@@ -210,13 +264,13 @@ def calcular_indice_riesgo_fuzzy(pr_path, t2m_path, carpeta_salida="uploads/ries
     t2m_ds.close()
     ds_r.close()
 
-    return {'archivo': ruta_salida, 'nombre_base': nombre_base, 'mensaje': 'Índice fuzzy generado'}
+    return {'archivo': ruta_salida, 'nombre_base': nombre_base, 'mensaje': 'Índice fuzzy descompuesto generado'}
 
 
-def calcular_indice_riesgo_raw(pr_path, t2m_path, carpeta_salida="uploads/riesgo_raw"):
+def calcular_indice_riesgo_crisp(pr_path, t2m_path, carpeta_salida="uploads/riesgo_crisp"):
     
-    #Genera un NetCDF con índice de riesgo crudo:
-    #riesgo_raw = max(1 - pr_norm, t2m_norm)
+    #Genera un NetCDF con índice de riesgo crisp:
+    #riesgo_crisp = max(1 - pr_norm, t2m_norm)
     
     os.makedirs(carpeta_salida, exist_ok=True)
     ds_pr  = xr.open_dataset(pr_path,  decode_times=False)
@@ -231,19 +285,19 @@ def calcular_indice_riesgo_raw(pr_path, t2m_path, carpeta_salida="uploads/riesgo
     pr_norm = (pr - pr_min) / (pr_max - pr_min + 1e-9)
     t_norm  = (t2m - t_min) / (t_max - t_min  + 1e-9)
 
-    raw = np.maximum(1 - pr_norm, t_norm)
+    crisp = np.maximum(1 - pr_norm, t_norm)
 
-    ds_raw = xr.Dataset({"riesgo_raw": (("time","lat","lon"), raw)}, coords=coords)
-    ds_raw = limpiar_atributos_conflictivos(ds_raw)
+    ds_crisp = xr.Dataset({"riesgo_crisp": (("time","lat","lon"), crisp)}, coords=coords)
+    ds_crisp = limpiar_atributos_conflictivos(ds_crisp)
     nombre_base = generar_nombre_base(ds_pr)
-    ruta_salida = os.path.join(carpeta_salida, f"riesgo_raw_{nombre_base}.nc")
-    ds_raw.to_netcdf(ruta_salida)
+    ruta_salida = os.path.join(carpeta_salida, f"riesgo_crisp_{nombre_base}.nc")
+    ds_crisp.to_netcdf(ruta_salida)
 
     ds_pr.close()
     ds_t2m.close()
-    ds_raw.close()
+    ds_crisp.close()
 
-    return {'archivo': ruta_salida, 'nombre_base': nombre_base, 'mensaje': 'Índice raw generado'}
+    return {'archivo': ruta_salida, 'nombre_base': nombre_base, 'mensaje': 'Índice crisp generado'}
 
 
 def calcular_fecha_desde_indice(nombre_base, indice):

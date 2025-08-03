@@ -12,3 +12,4 @@ affine
 cftime 
 scipy
 python-dotenv
+shapely
