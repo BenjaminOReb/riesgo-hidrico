@@ -6,7 +6,7 @@ import numpy as np
 # --- Configuración de archivos y variables ---
 # Ajusta estas rutas si tus archivos están en otras carpetas
 files = [
-    #("uploads/riesgo_crisp/riesgo_crisp_2019-05.nc", "riesgo_crisp",    "Riesgo Crisp"),
+    ("uploads/riesgo_crisp/riesgo_crisp_2019-05.nc", "riesgo_crisp",    "Riesgo Crisp"),
 
     #("uploads/riesgo_fuzzy/riesgo_fuzzy_2019-05.nc", "riesgo_alto_A", "Tem Alta + Pr Baja"),
     #("uploads/riesgo_fuzzy/riesgo_fuzzy_2019-05.nc", "riesgo_alto_B", "Tem Media + Pr Baja"),
@@ -21,8 +21,8 @@ files = [
     #("uploads/riesgo_fuzzy/riesgo_fuzzy_2019-05.nc", "riesgo_bajo_B", "Tem Baja + Pr Alta"),
 
     ("uploads/riesgo_fuzzy/riesgo_fuzzy_2019-05.nc", "riesgo_alto", "Riesgo Alto A+B"),
-    ("uploads/riesgo_fuzzy/riesgo_fuzzy_2019-05.nc", "riesgo_medio", "Riesgo Medio A+B+C+D+E"),
-    ("uploads/riesgo_fuzzy/riesgo_fuzzy_2019-05.nc", "riesgo_bajo", "Riesgo Bajo A+B"),
+    #("uploads/riesgo_fuzzy/riesgo_fuzzy_2019-05.nc", "riesgo_medio", "Riesgo Medio A+B+C+D+E"),
+    #("uploads/riesgo_fuzzy/riesgo_fuzzy_2019-05.nc", "riesgo_bajo", "Riesgo Bajo A+B"),
     ("uploads/riesgo_fuzzy/riesgo_fuzzy_2019-05.nc", "riesgo_fuzzy", "Riesgo Fuzzy (Combinada alto, medio y bajo)"),
 
     #("uploads/recortado/t2m_2019-05_recortado.nc",   "t2m",          "Temperatura"),
@@ -39,7 +39,7 @@ files = [
 time_index = 59 # índice temporal a plotear (0 a 59 en tu caso)
 
 # --- Crear figura con 2 filas x 3 columnas ---
-fig, axes = plt.subplots(nrows=1, ncols=4, figsize=(18, 10), 
+fig, axes = plt.subplots(nrows=1, ncols=3, figsize=(18, 10), 
                          subplot_kw={"projection": None})
 axes = axes.flatten()
 
