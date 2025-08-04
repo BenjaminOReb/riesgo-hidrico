@@ -9,22 +9,25 @@ export default function LinguisticModal({ isOpen, onClose, fetchUrl, title, isTe
   const [series, setSeries] = useState([]);
   const [options, setOptions] = useState({
     chart: { type: "line", toolbar: { show: false } },
-    colors: ["#08306b", "#fed976", "#bd0026"],
+    colors: ["#08306b", "#feb24c", "#bd0026"],
     title: { show: false },
     xaxis: {
       type: "numeric",
       tickAmount: 5,
-      labels: { formatter: val => `${val.toFixed(2)}${unit}` },
+      labels: { formatter: val => `${val.toFixed(2)}${unit}`},
       title: { text: "Unidad de medida" }
     },
     yaxis: {
       title: { text: "Grados de pertenencia" },
       min: 0, max: 1, tickAmount: 5,
-      labels: { formatter: v => v.toFixed(2) }
+      labels: { formatter: v => v.toFixed(2), }
     },
     stroke: { curve: "straight", width: 4 },
     markers: { size: 0 },
-    legend: { position: "top" },
+    legend: { position: "top",
+              horizontalAlign: "center",
+              fontSize: "25px", // más grande
+              markers: { width: 16, height: 16 } },
     tooltip: {
       x: { formatter: val => `${val.toFixed(2)}${unit}` },
       y: { formatter: v => v.toFixed(2) }
@@ -59,12 +62,12 @@ export default function LinguisticModal({ isOpen, onClose, fetchUrl, title, isTe
         const annotations = [];
         const discreteMarkers = [];
 
-        [[lowIdxs, "#08306b"], [medIdxs, "#fed976"], [highIdxs, "#bd0026"]]
+        [[lowIdxs, "#08306b"], [medIdxs, "#feb24c"], [highIdxs, "#bd0026"]]
           .forEach(([idxs, color], seriesIndex) => {
             idxs.forEach((dpIdx, i) => {
               const x = categories[dpIdx];
               // desplazamiento vertical según la posición en [a,b,c,d]
-              const offsetY = (i * 20) + 30;
+              const offsetY = (i *40) + 30;
 
               annotations.push({
                 x,
@@ -72,7 +75,7 @@ export default function LinguisticModal({ isOpen, onClose, fetchUrl, title, isTe
                 strokeDashArray: 4,
                 label: {
                   text: `${letters[i]}=${x.toFixed(2)}${unit}`,
-                  style: { color, background: "#fff" },
+                  style: { color, background: "#fff", fontSize: "21px" },
                   orientation: "horizontal",
                   position: "top",
                   offsetY
@@ -118,7 +121,7 @@ export default function LinguisticModal({ isOpen, onClose, fetchUrl, title, isTe
         className="modal-content"
         style={{
           maxWidth: '90vw',
-          width: '800px',
+          width: '1060px',
           padding: '1rem'
         }}
       >
@@ -130,7 +133,7 @@ export default function LinguisticModal({ isOpen, onClose, fetchUrl, title, isTe
           options={options}
           series={series}
           type="line"
-          height={350}
+          height={540}
           width="100%"
         />
       </div>
