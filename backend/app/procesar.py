@@ -235,7 +235,7 @@ def calcular_indice_riesgo_fuzzy(pr_path, t2m_path, carpeta_salida="uploads/ries
     ])
     riesgo_bajo  = np.maximum(riesgo_bajo_A, riesgo_bajo_B)
 
-    riesgo_fuzzy = np.maximum(pr_baja, t2m_alta)  #np.maximum.reduce([riesgo_alto, riesgo_medio, riesgo_bajo])
+    riesgo_fuzzy = np.maximum.reduce([riesgo_alto, riesgo_medio, riesgo_bajo])
 
     coords = pr_ds.coords
 

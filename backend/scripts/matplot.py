@@ -30,18 +30,18 @@ regiones = (
 
 region_names = [
     #Norte
-    "Región de Arica y Parinacota",
-    "Región de Tarapacá",
-    "Región de Antofagasta",
-    "Región de Atacama",
-    "Región de Coquimbo",
+    #"Región de Arica y Parinacota",
+    #"Región de Tarapacá",
+    #"Región de Antofagasta",
+    #"Región de Atacama",
+    #"Región de Coquimbo",
     #Centro
-    #"Región de Valparaíso",
-    #"Región Metropolitana de Santiago",
-    #"Región del Libertador Bernardo O'Higgins",
-    #"Región del Maule",
-    #"Región de Ñuble",
-    #"Región del Bío-Bío",
+    "Región de Valparaíso",
+    "Región Metropolitana de Santiago",
+    "Región del Libertador Bernardo O'Higgins",
+    "Región del Maule",
+    "Región de Ñuble",
+    "Región del Bío-Bío",
     #Sur
     #"Región de La Araucanía",
     #"Región de Los Ríos",
@@ -115,7 +115,7 @@ for ax, (ruta, var, titulo) in zip(axes, files):
     plt.colorbar(pcm, ax=ax, orientation="vertical", label=var)
 
 fig.suptitle(
-    f"Mapa Zona Sur",
+    f"Mapa Zona Centro",
     fontsize=16
 )
 plt.tight_layout(rect=[0, 0, 1, 0.94])
