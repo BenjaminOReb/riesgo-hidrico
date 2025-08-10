@@ -4,15 +4,15 @@ Herramienta web para calcular y visualizar índices de riesgo hídrico a partir 
 
 - **Backend** (Flask + PostgreSQL):  
   - **Backend** (Flask + PostgreSQL):  
-  - Procesamiento de NetCDF (recortes a últimos 5 años, cálculo de índices raw).  
+  - Procesamiento de NetCDF (recortes a últimos 5 años, cálculo de índices crisp).  
   - **Generación de capas fuzzy**:  
     - Se definen tres **variables lingüísticas** para cada serie (`pr` o `t2m`): *baja*, *media*, *alta*.  
     - Para cada región se calculan sus correspondientes **funciones de pertenencia trapezoidales** (trapmf), adaptadas al rango local de valores.  
     - Combinación fuzzy del índice hídrico:  
       ```python
-      riesgo_fuzzy = max(pr_baja, t2m_alta)
+      riesgo_fuzzy = min(pr_baja, t2m_alta)
       ```
-    - Servicios REST exponen tanto el índice raw como el fuzzy.
+    - Servicios REST exponen tanto el índice crisp como el fuzzy.
   - Almacenamiento de metadatos en base de datos y reuse de archivos procesados.  
 
 - **Frontend** (React + Leaflet + georaster-layer-for-leaflet):  
@@ -21,7 +21,7 @@ Herramienta web para calcular y visualizar índices de riesgo hídrico a partir 
   - Selector de fecha (mensual) — solo meses disponibles en BD.  
   - Selector de tipo de mapa (Temperatura, Precipitación o Riesgo Hídrico).  
   - Mapas dinámicos:  
-    - **Riesgo**: 2 vistas (raw / fuzzy) + “Ver promedio últimos 2 años”.  
+    - **Riesgo**: 2 vistas (crisp / fuzzy) + “Ver promedio últimos 2 años”.  
     - **Precipitación/Temperatura**: 4 vistas (normal, fuzzy baja, media, alta).  
   - Leyendas incrustadas en cada mapa, con fondo semitransparente y etiquetas claras (mm o °C en normal, 0–1 en fuzzy). 
 
@@ -126,13 +126,13 @@ frontend/
 
 | Ruta                                                         |   Método  | Descripción                                                                         |     
 | ------------------------------------------------------------ | :-------: | ----------------------------------------------------------------------------------- |
-| `/upload`                                                    |    POST   | Subir 1 NetCDF (recorta, fuzzy, índices raw+fuzzy)                                  |     
+| `/upload`                                                    |    POST   | Subir 1 NetCDF (recorta, fuzzy, índices crisp+fuzzy)                                  |     
 | `/api/ubicaciones`                                           |    GET    | Jerarquía Región→Provincia→Comuna                                                   |     
 | `/api/lista-zonas?zona={region/provincia/comuna}\`           | GET       | Listado de nombres según el tipo de zona                                            |
 | `/api/riesgo-fuzzy-geotiff?zona=&valor=&fecha=`              | GET       | GeoTIFF de índice fuzzy por zona (variables lingüísticas *baja*, *media*, *alta*)   |     
-| `/api/riesgo-raw-zona?zona=&valor=&fecha=`                   |    GET    | Stats de índice raw por zona (JSON)                                                 |     
+| `/api/riesgo-crisp-zona?zona=&valor=&fecha=`                   |    GET    | Stats de índice crisp por zona (JSON)                                                 |     
 | `/api/riesgo-fuzzy-geotiff?zona=&valor=&fecha=`              |    GET    | GeoTIFF de índice fuzzy recortado por zona (fuzzy con variables lingüísticas)       |     
-| `/api/riesgo-raw-geotiff?zona=&valor=&fecha=`                |    GET    | GeoTIFF de índice raw recortado por zona                                            |     
+| `/api/riesgo-crisp-geotiff?zona=&valor=&fecha=`                |    GET    | GeoTIFF de índice crisp recortado por zona                                            |     
 | `/api/precipitacion-geotiff?zona=&valor=&fecha=`             |    GET    | GeoTIFF de precipitación (mm) recortado por zona                                    |     
 | `/api/precipitacion-baja-fuzzy-geotiff?zona=&valor=&fecha=`  |    GET    | GeoTIFF de grado de pertenencia baja de precipitación                               |     
 | `/api/precipitacion-media-fuzzy-geotiff?zona=&valor=&fecha=` |    GET    | GeoTIFF de grado de pertenencia media de precipitación                              |     
@@ -144,7 +144,7 @@ frontend/
 | `/api/geojson?region/provincia/comuna=`                      | GET       | GeoJSON de la zona indicada                                                         |
 | `/api/fechas-disponibles`                                    |    GET    | Listado de meses (`YYYY-MM`) disponibles para riesgo fuzzy final                    |     
 | `/api/promedio-riesgo-fuzzy-zona?zona=&valor=`               |    GET    | GeoTIFF de promedio de índice fuzzy de los últimos 24 meses (sin parámetro `fecha`) |     
-| `/api/promedio-riesgo-raw-zona?zona=&valor=`                 |    GET    | GeoTIFF de promedio de índice raw de los últimos 24 meses (sin parámetro `fecha`)   |     
+| `/api/promedio-riesgo-crisp-zona?zona=&valor=`                 |    GET    | GeoTIFF de promedio de índice crisp de los últimos 24 meses (sin parámetro `fecha`)   |     
 | `/descargas/geotiff/<nombre>`                                |    GET    | Descarga directa de GeoTIFF ya generado (en `uploads/.../geotiff/`)                 |     
 
 

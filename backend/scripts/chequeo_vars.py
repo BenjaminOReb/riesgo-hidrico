@@ -12,13 +12,13 @@ def inspect_dataset(path):
     ds = xr.open_dataset(path, decode_times=False)
     vars = list(ds.data_vars)
     print("🔍 Variables disponibles:", vars)
-    dims = dict(ds.dims)
-    print("📏 Dimensiones:", dims)
+    sizes = dict(ds.sizes)
+    print("📏 Dimensiones:", sizes)
 
     # Rango temporal si existe time
-    if "time" in ds.dims:
+    if "time" in ds.sizes:
         t0, t1 = ds["time"].values[0], ds["time"].values[-1]
-        print(f"🕒 Rango de fechas: {t0} → {t1} ({ds.dims['time']} pasos)")
+        print(f"🕒 Rango de fechas: {t0} → {t1} ({ds.sizes['time']} pasos)")
 
     # Para cada variable numérica calcula stats
     for var in vars:
@@ -43,8 +43,8 @@ if __name__ == "__main__":
     # 1) NetCDF recortados
     
     archivos = [
-        os.path.join(base, "recortado", "pr_2019-05_recortado.nc"),
-        os.path.join(base, "recortado", "t2m_2019-05_recortado.nc"),
+        os.path.join(base, "recortado", "pr_2019-12_recortado.nc"),
+        os.path.join(base, "recortado", "t2m_2019-12_recortado.nc"),
     ]
     # 2) NetCDF fuzzy (pr y t2m)
     archivos += [
@@ -64,8 +64,8 @@ if __name__ == "__main__":
         if fn.endswith(".nc")
     ]
     archivos += [
-        os.path.join(base, "crisp", "CR2MET_pr_v2.0_mon_1979_2019_005deg.nc"),
-        os.path.join(base, "crisp","CR2MET_t2m_v2.0_mon_1979_2019_005deg.nc"),
+        os.path.join(base, "crisp", "CR2MET_pr_v2.0_mon_1979_2019_012deg.nc"),
+        os.path.join(base, "crisp","CR2MET_t2m_v2.0_mon_1979_2019_012deg.nc"),
     ]
 
     for path in archivos:

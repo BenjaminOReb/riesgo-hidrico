@@ -1,6 +1,7 @@
 import os
 import datetime
 import tempfile
+from dateutil.relativedelta import relativedelta
 
 import xarray as xr
 import numpy as np
@@ -36,10 +37,9 @@ def generar_nombre_base(ds):
     # Genera un nombre base 'YYYY-MM' a partir del último step temporal.
     
     try:
-        ultimo = ds.sizes['time'] - 1
-        valor  = ds['time'].values[ultimo]
+        ultimo = float(ds["time"].values[-1])
         base   = datetime.datetime(1978, 12, 15)
-        fecha  = base + datetime.timedelta(days=int(valor * 30))
+        fecha  = base + relativedelta(months=+int(round(ultimo)))
         return f"{fecha.year}-{fecha.month:02d}"
     except Exception:
         return datetime.datetime.now().strftime('%Y-%m')

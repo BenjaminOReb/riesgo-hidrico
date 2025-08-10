@@ -6,40 +6,40 @@ import numpy as np
 # --- Configuración de archivos y variables ---
 # Ajusta estas rutas si tus archivos están en otras carpetas
 files = [
-    ("uploads/riesgo_crisp/riesgo_crisp_2019-05.nc", "riesgo_crisp",    "Riesgo Crisp"),
+    #("uploads/riesgo_crisp/riesgo_crisp_2019-12.nc", "riesgo_crisp",    "Riesgo Crisp"),
 
-    #("uploads/riesgo_fuzzy/riesgo_fuzzy_2019-05.nc", "riesgo_alto_A", "Tem Alta + Pr Baja"),
-    #("uploads/riesgo_fuzzy/riesgo_fuzzy_2019-05.nc", "riesgo_alto_B", "Tem Media + Pr Baja"),
+    #("uploads/riesgo_fuzzy/riesgo_fuzzy_2019-12.nc", "riesgo_alto_A", "Tem Alta + Pr Baja"),
+    #("uploads/riesgo_fuzzy/riesgo_fuzzy_2019-12.nc", "riesgo_alto_B", "Tem Media + Pr Baja"),
 
-    #("uploads/riesgo_fuzzy/riesgo_fuzzy_2019-05.nc", "riesgo_medio_A", "Tem Baja + Pr Baja"),
-    #("uploads/riesgo_fuzzy/riesgo_fuzzy_2019-05.nc", "riesgo_medio_B", "Tem Alta + Pr Media"),
-    #("uploads/riesgo_fuzzy/riesgo_fuzzy_2019-05.nc", "riesgo_medio_C", "Tem Media + Pr Media"),
-    #("uploads/riesgo_fuzzy/riesgo_fuzzy_2019-05.nc", "riesgo_medio_D", "Tem Baja + Pr Media"),
-    #("uploads/riesgo_fuzzy/riesgo_fuzzy_2019-05.nc", "riesgo_medio_E", "Tem Alta + Pr Alta"),
+    #("uploads/riesgo_fuzzy/riesgo_fuzzy_2019-12.nc", "riesgo_medio_A", "Tem Baja + Pr Baja"),
+    #("uploads/riesgo_fuzzy/riesgo_fuzzy_2019-12.nc", "riesgo_medio_B", "Tem Alta + Pr Media"),
+    #("uploads/riesgo_fuzzy/riesgo_fuzzy_2019-12.nc", "riesgo_medio_C", "Tem Media + Pr Media"),
+    #("uploads/riesgo_fuzzy/riesgo_fuzzy_2019-12.nc", "riesgo_medio_D", "Tem Baja + Pr Media"),
+    #("uploads/riesgo_fuzzy/riesgo_fuzzy_2019-12.nc", "riesgo_medio_E", "Tem Alta + Pr Alta"),
 
-    #("uploads/riesgo_fuzzy/riesgo_fuzzy_2019-05.nc", "riesgo_bajo_A", "Tem Media + Pr Alta"),
-    #("uploads/riesgo_fuzzy/riesgo_fuzzy_2019-05.nc", "riesgo_bajo_B", "Tem Baja + Pr Alta"),
+    #("uploads/riesgo_fuzzy/riesgo_fuzzy_2019-12.nc", "riesgo_bajo_A", "Tem Media + Pr Alta"),
+    #("uploads/riesgo_fuzzy/riesgo_fuzzy_2019-12.nc", "riesgo_bajo_B", "Tem Baja + Pr Alta"),
 
-    ("uploads/riesgo_fuzzy/riesgo_fuzzy_2019-05.nc", "riesgo_alto", "Riesgo Alto A+B"),
-    #("uploads/riesgo_fuzzy/riesgo_fuzzy_2019-05.nc", "riesgo_medio", "Riesgo Medio A+B+C+D+E"),
-    #("uploads/riesgo_fuzzy/riesgo_fuzzy_2019-05.nc", "riesgo_bajo", "Riesgo Bajo A+B"),
-    ("uploads/riesgo_fuzzy/riesgo_fuzzy_2019-05.nc", "riesgo_fuzzy", "Riesgo Fuzzy (Combinada alto, medio y bajo)"),
+    #("uploads/riesgo_fuzzy/riesgo_fuzzy_2019-12.nc", "riesgo_alto", "Riesgo Alto A+B"),
+    #("uploads/riesgo_fuzzy/riesgo_fuzzy_2019-12.nc", "riesgo_medio", "Riesgo Medio A+B+C+D+E"),
+    #("uploads/riesgo_fuzzy/riesgo_fuzzy_2019-12.nc", "riesgo_bajo", "Riesgo Bajo A+B"),
+    #("uploads/riesgo_fuzzy/riesgo_fuzzy_2019-12.nc", "riesgo_fuzzy", "Riesgo Fuzzy (Combinada alto, medio y bajo)"),
 
-    #("uploads/recortado/t2m_2019-05_recortado.nc",   "t2m",          "Temperatura"),
-    #("uploads/fuzzy/fuzzy_t2m_2019-05.nc",           "t2m_baja",    "Temperatura Fuzzy (baja)"),
-    #("uploads/fuzzy/fuzzy_t2m_2019-05.nc",           "t2m_media",    "Temperatura Fuzzy (moderada)"),
-    #("uploads/fuzzy/fuzzy_t2m_2019-05.nc",           "t2m_alta",    "Temperatura Fuzzy (alta)"),
+    ("uploads/recortado/t2m_2019-12_recortado.nc",   "t2m",          "Temperatura"),
+    #("uploads/fuzzy/fuzzy_t2m_2019-12.nc",           "t2m_baja",    "Temperatura Fuzzy (baja)"),
+    #("uploads/fuzzy/fuzzy_t2m_2019-12.nc",           "t2m_media",    "Temperatura Fuzzy (moderada)"),
+    #("uploads/fuzzy/fuzzy_t2m_2019-12.nc",           "t2m_alta",    "Temperatura Fuzzy (alta)"),
 
-    #("uploads/recortado/pr_2019-05_recortado.nc",    "pr",           "Precipitación"),
-    #("uploads/fuzzy/fuzzy_pr_2019-05.nc",            "pr_baja",     "Precipitación Fuzzy (baja)"),
-    #("uploads/fuzzy/fuzzy_pr_2019-05.nc",            "pr_media",     "Precipitación Fuzzy (moderada)"),
-    #("uploads/fuzzy/fuzzy_pr_2019-05.nc",            "pr_alta",     "Precipitación Fuzzy (alta)")
+    ("uploads/recortado/pr_2019-12_recortado.nc",    "pr",           "Precipitación"),
+    #("uploads/fuzzy/fuzzy_pr_2019-12.nc",            "pr_baja",     "Precipitación Fuzzy (baja)"),
+    #("uploads/fuzzy/fuzzy_pr_2019-12.nc",            "pr_media",     "Precipitación Fuzzy (moderada)"),
+    #("uploads/fuzzy/fuzzy_pr_2019-12.nc",            "pr_alta",     "Precipitación Fuzzy (alta)")
 ]
 
 time_index = 59 # índice temporal a plotear (0 a 59 en tu caso)
 
 # --- Crear figura con 2 filas x 3 columnas ---
-fig, axes = plt.subplots(nrows=1, ncols=3, figsize=(18, 10), 
+fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(18, 10), 
                          subplot_kw={"projection": None})
 axes = axes.flatten()
 
@@ -66,7 +66,7 @@ for ax, (ruta, var, titulo) in zip(axes, files):
     #    Creamos la malla de coordenadas
     Lon, Lat = np.meshgrid(lons, lats)
     pcm = ax.pcolormesh(Lon, Lat, data,
-                        cmap="plasma", shading="auto")
+                        cmap="YlGnBu", shading="auto")
     
     ax.set_title(titulo, fontsize=14)
     ax.set_xlabel("Longitud")
