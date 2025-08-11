@@ -66,7 +66,7 @@ for ax, (ruta, var, titulo) in zip(axes, files):
     #    Creamos la malla de coordenadas
     Lon, Lat = np.meshgrid(lons, lats)
     pcm = ax.pcolormesh(Lon, Lat, data,
-                        cmap="YlGnBu", shading="auto")
+                        cmap="plasma", shading="auto")
     
     ax.set_title(titulo, fontsize=14)
     ax.set_xlabel("Longitud")

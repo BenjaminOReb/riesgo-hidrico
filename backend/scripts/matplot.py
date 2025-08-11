@@ -9,16 +9,16 @@ from affine import Affine
 # --- Configuración de archivos y variables ---
 # Ajusta estas rutas si tus archivos están en otras carpetas
 files = [
-    ("uploads/riesgo_crisp/riesgo_crisp_2019-05.nc", "riesgo_crisp",    "Riesgo Crisp"),
-    ("uploads/riesgo_fuzzy/riesgo_fuzzy_2019-05.nc", "riesgo_fuzzy", "Riesgo Fuzzy"),
-    #("uploads/recortado/t2m_2019-05_recortado.nc",   "t2m",          "Temperatura"),
-    #("uploads/fuzzy/fuzzy_t2m_2019-05.nc",           "t2m_baja",    "Temperatura Fuzzy (baja)"),
-    #("uploads/fuzzy/fuzzy_t2m_2019-05.nc",           "t2m_media",    "Temperatura Fuzzy (moderada)"),
-    #("uploads/fuzzy/fuzzy_t2m_2019-05.nc",           "t2m_alta",    "Temperatura Fuzzy (alta)"),
-    #("uploads/recortado/pr_2019-05_recortado.nc",    "pr",           "Precipitación"),
-    #("uploads/fuzzy/fuzzy_pr_2019-05.nc",            "pr_baja",     "Precipitación Fuzzy (baja)"),
-    #("uploads/fuzzy/fuzzy_pr_2019-05.nc",            "pr_media",     "Precipitación Fuzzy (moderada)"),
-    #("uploads/fuzzy/fuzzy_pr_2019-05.nc",            "pr_alta",     "Precipitación Fuzzy (alta)")
+    #("uploads/riesgo_crisp/riesgo_crisp_2019-12.nc", "riesgo_crisp",    "Riesgo Crisp"),
+    #("uploads/riesgo_fuzzy/riesgo_fuzzy_2019-12.nc", "riesgo_fuzzy", "Riesgo Fuzzy"),
+    #("uploads/recortado/t2m_2019-12_recortado.nc",   "t2m",          "Temperatura"),
+    #("uploads/fuzzy/fuzzy_t2m_2019-12.nc",           "t2m_baja",    "Temperatura Fuzzy (baja)"),
+    #("uploads/fuzzy/fuzzy_t2m_2019-12.nc",           "t2m_media",    "Temperatura Fuzzy (moderada)"),
+    #("uploads/fuzzy/fuzzy_t2m_2019-12.nc",           "t2m_alta",    "Temperatura Fuzzy (alta)"),
+    ("uploads/recortado/pr_2019-12_recortado.nc",    "pr",           "Precipitación"),
+    ("uploads/fuzzy/fuzzy_pr_2019-12.nc",            "pr_baja",     "Precipitación Fuzzy (baja)"),
+    ("uploads/fuzzy/fuzzy_pr_2019-12.nc",            "pr_media",     "Precipitación Fuzzy (moderada)"),
+    ("uploads/fuzzy/fuzzy_pr_2019-12.nc",            "pr_alta",     "Precipitación Fuzzy (alta)")
 ]
 
 time_index = 59 # índice temporal a plotear (0 a 59 en tu caso)
@@ -36,18 +36,18 @@ region_names = [
     #"Región de Atacama",
     #"Región de Coquimbo",
     #Centro
-    "Región de Valparaíso",
-    "Región Metropolitana de Santiago",
-    "Región del Libertador Bernardo O'Higgins",
-    "Región del Maule",
-    "Región de Ñuble",
-    "Región del Bío-Bío",
+    #"Región de Valparaíso",
+    #"Región Metropolitana de Santiago",
+    #"Región del Libertador Bernardo O'Higgins",
+    #"Región del Maule",
+    #"Región de Ñuble",
+    #"Región del Bío-Bío",
     #Sur
     #"Región de La Araucanía",
     #"Región de Los Ríos",
     #"Región de Los Lagos",
     #"Región de Aysén del Gral.Ibañez del Campo",
-    #"Región de Magallanes y Antártica Chilena",
+    "Región de Magallanes y Antártica Chilena",
     #"Zona sin demarcar",
 ]
 
@@ -115,7 +115,7 @@ for ax, (ruta, var, titulo) in zip(axes, files):
     plt.colorbar(pcm, ax=ax, orientation="vertical", label=var)
 
 fig.suptitle(
-    f"Mapa Zona Centro",
+    f"Precipitación Región de Magallanes y Antártica Chilena",
     fontsize=16
 )
 plt.tight_layout(rect=[0, 0, 1, 0.94])
