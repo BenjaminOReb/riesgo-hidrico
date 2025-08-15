@@ -44,13 +44,12 @@ def cargar_jerarquia_ubicaciones(ruta_shapefile='shapefiles/comunas/comunas.shp'
 
     return jerarquia
 
-import geopandas as gpd
 
 def obtener_zona_gdf(zona, valor):
-    """
-    Lee el shapefile correspondiente a la zona (comuna/provincia/región/pais/norte/centro/sur)
-    y devuelve un GeoDataFrame con la(s) geometría(s) filtrada(s).
-    """
+    
+    # Lee el shapefile correspondiente a la zona (comuna/provincia/región/pais/norte/centro/sur)
+    # y devuelve un GeoDataFrame con la(s) geometría(s) filtrada(s).
+    
     z = zona.strip().lower()
 
     # 1) Casos puntuales: país, zonas

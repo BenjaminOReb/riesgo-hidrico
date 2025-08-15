@@ -239,7 +239,7 @@ def upload_file():
 @routes.route('/api/ubicaciones', methods=['GET'])
 def obtener_ubicaciones():
 
-    # Devuelve la jerarquía de regiones→provincias→comunas como JSON.
+    # Devuelve la jerarquía de regiones/provincias/comunas como JSON.
 
     try:
         jerarquia = cargar_jerarquia_ubicaciones()
@@ -680,7 +680,7 @@ def servir_temperatura_media_fuzzy_geotiff():
     valor = request.args.get('valor')
     fecha = request.args.get('fecha')
     if not zona or not valor or not fecha:
-        # Parámetros obligatorios faltantes → 400 Bad Request
+        # Parámetros obligatorios faltantes  400 Bad Request
         return jsonify({'error': 'Faltan parámetros'}), 400
 
     # 2) Consultar en BD el NetCDF fuzzy de temperatura que cubre la fecha
@@ -701,7 +701,7 @@ def servir_temperatura_media_fuzzy_geotiff():
     conn.close()
 
     if not fila:
-        # Si no hay resultado → 404 Not Found
+        # Si no hay resultado  404 Not Found
         return jsonify({'error': f'No hay datos fuzzy de temperatura para {fecha}'}), 404
 
     # 3) Desempaquetar resultados: ruta al archivo, nombre_base, fecha inicial
@@ -756,7 +756,7 @@ def servir_temperatura_alta_fuzzy_geotiff():
     conn.close()
 
     if not fila:
-        # Sin datos disponibles → 404
+        # Sin datos disponibles  404
         return jsonify({'error': f'No hay datos fuzzy de temperatura para {fecha}'}), 404
 
     # 3) Desempaquetar ruta, nombre_base y fecha inicial
@@ -819,7 +819,7 @@ def geojson_zona():
                 crs="EPSG:4326"
             )
         elif norte is not None:
-            # Norte: Arica→Coquimbo
+            # Norte: Arica/Coquimbo
             norte_list = [
               "Región de Arica y Parinacota",
               "Región de Tarapacá",
@@ -835,7 +835,7 @@ def geojson_zona():
                 crs="EPSG:4326"
             )
         elif centro is not None:
-            # Centro: Valparaíso→Ñuble→Bío-Bío
+            # Centro: Valparaíso/Ñuble/Bío-Bío
             centro_list = [
               "Región de Valparaíso",
               "Región Metropolitana de Santiago",
@@ -852,7 +852,7 @@ def geojson_zona():
                 crs="EPSG:4326"
             )
         elif sur is not None:
-            # Sur: La Araucanía→Magallanes
+            # Sur: La Araucanía/Magallanes
             sur_list = [
               "Región de La Araucanía",
               "Región de Los Ríos",
@@ -921,10 +921,10 @@ def fechas_disponibles():
 
 @routes.route('/api/promedio-riesgo-fuzzy-zona', methods=['GET'])
 def promedio_riesgo_fuzzy_zona():
-    """
-    Calcula el promedio del índice 'riesgo_alto' (últimos 24 pasos temporales)
-    para la zona seleccionada y devuelve un GeoTIFF.
-    """
+    
+    # Calcula el promedio del índice 'riesgo_alto' (últimos 24 pasos temporales)
+    # para la zona seleccionada y devuelve un GeoTIFF.
+    
     zona = request.args.get('zona')
     valor = request.args.get('valor')
 

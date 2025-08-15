@@ -128,7 +128,7 @@ def generar_capas_fuzzy(ruta_archivo, carpeta_salida="uploads/fuzzy"):
             if not valid_mask.any():
                 continue
 
-            vals = datos_t[valid_mask]          # ¡solo este mes!
+            vals = datos_t[valid_mask]          #Solo este mes
             m, M = float(vals.min()), float(vals.max())
             L8   = (M - m) / 8.0
             L2   = (M + m) / 2.0
@@ -269,8 +269,8 @@ def calcular_indice_riesgo_fuzzy(pr_path, t2m_path, carpeta_salida="uploads/ries
 
 def calcular_indice_riesgo_crisp(pr_path, t2m_path, carpeta_salida="uploads/riesgo_crisp"):
     
-    #Genera un NetCDF con índice de riesgo crisp:
-    #riesgo_crisp = max(1 - pr_norm, t2m_norm)
+    # Genera un NetCDF con índice de riesgo crisp:
+    # riesgo_crisp = max(1 - pr_norm, t2m_norm)
     
     os.makedirs(carpeta_salida, exist_ok=True)
     ds_pr  = xr.open_dataset(pr_path,  decode_times=False)
@@ -316,11 +316,11 @@ def calcular_fecha_desde_indice(nombre_base, indice):
 
 
 def generar_geotiff_zona(zona_gdf, ruta_netcdf, indice_tiempo, var_name):
-    """
-    Genera un GeoTIFF recortado a la geometría zona_gdf, a partir de la variable var_name
-    en el netCDF ruta_netcdf en el paso temporal indice_tiempo.
-    Corrige la orientación de eje X e Y para que se muestre correctamente en Leaflet.
-    """
+    
+    # Genera un GeoTIFF recortado a la geometría zona_gdf, a partir de la variable var_name
+    # en el netCDF ruta_netcdf en el paso temporal indice_tiempo.
+    # Corrige la orientación de eje X e Y para que se muestre correctamente en Leaflet.
+    
 
     # 1) Asegurar CRS de la zona
     if zona_gdf.crs is None or zona_gdf.crs.to_string() != "EPSG:4326":
@@ -393,13 +393,13 @@ def generar_geotiff_zona(zona_gdf, ruta_netcdf, indice_tiempo, var_name):
 
 
 def calcular_stats_fuzzy(zona_gdf, ruta_netcdf, indice_tiempo, var_name):
-    """
-    Calcula las funciones de pertenencia (baja, media, alta) para la variable var_name
-    ('pr' o 't2m') en el NetCDF ruta_netcdf, recortada a la geometría zona_gdf
-    y al paso temporal indice_tiempo. Devuelve un dict con:
-      - 'categories': dominio de entrada (100 puntos)
-      - 'baja', 'media', 'alta': listas con el grado de pertenencia [0–1]
-    """
+    
+    # Calcula las funciones de pertenencia (baja, media, alta) para la variable var_name
+    # ('pr' o 't2m') en el NetCDF ruta_netcdf, recortada a la geometría zona_gdf
+    # y al paso temporal indice_tiempo. Devuelve un dict con:
+    #   - 'categories': dominio de entrada (100 puntos)
+    #   - 'baja', 'media', 'alta': listas con el grado de pertenencia [0–1]
+    
 
     # 1) Asegurar CRS en EPSG:4326
     if zona_gdf.crs is None or zona_gdf.crs.to_string() != "EPSG:4326":

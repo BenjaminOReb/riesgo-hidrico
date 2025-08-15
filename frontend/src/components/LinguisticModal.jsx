@@ -26,7 +26,7 @@ export default function LinguisticModal({ isOpen, onClose, fetchUrl, title, isTe
     markers: { size: 0 },
     legend: { position: "top",
               horizontalAlign: "center",
-              fontSize: "25px", // más grande
+              fontSize: "25px",
               markers: { width: 16, height: 16 } },
     tooltip: {
       x: { formatter: val => `${val.toFixed(2)}${unit}` },

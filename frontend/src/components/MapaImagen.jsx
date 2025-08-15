@@ -119,7 +119,7 @@ export default function MapaImagen({ tipo, zona, valor, fecha }) {
           pixelValuesToColorFn: colorFn
         }).addTo(entry.map);
 
-        // —–––– Parámetro geojson según zona –––––—
+        // Parámetro geojson según zona
         const zonaParam =
           zona==="pais"      ? `pais=${encodeURIComponent(valor)}` :
           zona==="norte"     ? `norte=${encodeURIComponent(valor)}` :
