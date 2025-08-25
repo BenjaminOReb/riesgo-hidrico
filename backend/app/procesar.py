@@ -213,7 +213,7 @@ def calcular_indice_riesgo_fuzzy(pr_path, t2m_path, carpeta_salida="uploads/ries
     t2m_alta  = t2m_ds['t2m_alta'].values
 
     # Calcular las componentes solicitadas
-    riesgo_alto_A  = np.minimum(t2m_alta,  pr_baja)  # Tem Alta + Pr Baja 
+    """riesgo_alto_A  = np.minimum(t2m_alta,  pr_baja)  # Tem Alta + Pr Baja 
     riesgo_alto_B  = np.minimum(t2m_media, pr_baja)  # Tem Media + Pr Baja
 
     riesgo_medio_A = np.minimum(t2m_baja,  pr_baja)  # Tem Baja + Pr Baja
@@ -223,7 +223,19 @@ def calcular_indice_riesgo_fuzzy(pr_path, t2m_path, carpeta_salida="uploads/ries
     riesgo_medio_E = np.minimum(t2m_alta,  pr_alta)  # Tem Alta + Pr Alta
 
     riesgo_bajo_A  = np.minimum(t2m_media, pr_alta)  # Tem Media + Pr Alta
-    riesgo_bajo_B  = np.minimum(t2m_baja,  pr_alta)  # Tem Baja + Pr Alta
+    riesgo_bajo_B  = np.minimum(t2m_baja,  pr_alta)  # Tem Baja + Pr Alta"""
+
+    riesgo_alto_A  = (t2m_alta + pr_baja)/2  # Tem Alta + Pr Baja 
+    riesgo_alto_B  = (t2m_media + pr_baja)/2  # Tem Media + Pr Baja
+
+    riesgo_medio_A = (t2m_baja + pr_baja)/2  # Tem Baja + Pr Baja
+    riesgo_medio_B = (t2m_alta + pr_media)/2 # Tem Alta + Pr Media
+    riesgo_medio_C = (t2m_media + pr_media)/2 # Tem Media + Pr Media
+    riesgo_medio_D = (t2m_baja + pr_media)/2 # Tem Baja + Pr Media
+    riesgo_medio_E = (t2m_alta + pr_alta)/2  # Tem Alta + Pr Alta
+
+    riesgo_bajo_A  = (t2m_media + pr_alta)/2  # Tem Media + Pr Alta
+    riesgo_bajo_B  = (t2m_baja + pr_alta)/2  # Tem Baja + Pr Alta
 
     riesgo_alto  = np.maximum(riesgo_alto_A, riesgo_alto_B)
     riesgo_medio = np.maximum.reduce([
